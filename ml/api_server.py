@@ -1,11 +1,14 @@
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
+from flask_socketio import SocketIO
 from stable_baselines3 import DQN
 import numpy as np
 import os
 from pathlib import Path
 import sys
 import torch
+import socket as udp_socket
+import json
 from scipy.interpolate import interp1d
 
 # Add ml directory to path for imports
@@ -23,7 +26,40 @@ demo_dir = ml_dir.parent / 'demo'
 app = Flask(__name__, 
             static_folder=str(demo_dir),
             static_url_path='')
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})
+socketio = SocketIO(app, cors_allowed_origins="*")
+
+# UDP socket for forwarding pose data to Unity
+UNITY_UDP_IP = "127.0.0.1"
+UNITY_UDP_PORT = 5055
+_udp_sock = udp_socket.socket(udp_socket.AF_INET, udp_socket.SOCK_DGRAM)
+
+LANDMARK_MAP = {
+    "left_shoulder": 11, "right_shoulder": 12,
+    "left_elbow": 13,    "right_elbow": 14,
+    "left_wrist": 15,    "right_wrist": 16,
+    "left_hip": 23,      "right_hip": 24,
+    "left_knee": 25,     "right_knee": 26,
+    "left_ankle": 27,    "right_ankle": 28,
+    "left_heel": 29,     "right_heel": 30,
+    "left_foot": 31,     "right_foot": 32,
+}
+
+@socketio.on('pose_data')
+def handle_pose_data(landmarks):
+    """Receive landmarks from browser and forward to Unity via UDP"""
+    try:
+        pose = {
+            name: [round(landmarks[idx]['x'], 4),
+                   round(landmarks[idx]['y'], 4),
+                   round(landmarks[idx]['z'], 4)]
+            for name, idx in LANDMARK_MAP.items()
+            if idx < len(landmarks)
+        }
+        msg = json.dumps(pose).encode('utf-8')
+        _udp_sock.sendto(msg, (UNITY_UDP_IP, UNITY_UDP_PORT))
+    except Exception as e:
+        print(f"UDP forward error: {e}")
 
 # Load RL model for difficulty adjustment
 model_path = './models/dqn/DQN_rehab_final.zip'
@@ -444,4 +480,4 @@ if __name__ == '__main__':
     print("🌐 Open in browser: http://localhost:5000")
     print("📷 Make sure to ALLOW camera access!")
     print("="*60 + "\n")
-    app.run(host='localhost', port=5000, debug=False, threaded=True)
+    socketio.run(app, host='localhost', port=5000, debug=False)

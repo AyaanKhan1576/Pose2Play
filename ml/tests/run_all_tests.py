@@ -8,6 +8,7 @@ import sys
 import os
 from pathlib import Path
 import time
+from io import StringIO
 
 # Add parent directory and tests directory to path
 parent_dir = Path(__file__).parent.parent
@@ -19,6 +20,60 @@ sys.path.insert(0, str(tests_dir))
 import test_environment
 import test_angles
 import test_api
+
+
+class DetailedTestResult(unittest.TextTestResult):
+    """Custom test result class to capture detailed test information"""
+    
+    def __init__(self, stream, descriptions, verbosity):
+        super().__init__(stream, descriptions, verbosity)
+        self.test_details = []
+        
+    def startTest(self, test):
+        super().startTest(test)
+        self.current_test_start = time.time()
+        
+    def addSuccess(self, test):
+        super().addSuccess(test)
+        duration = time.time() - self.current_test_start
+        self.test_details.append({
+            'test': test,
+            'status': 'PASS',
+            'duration': duration,
+            'message': ''
+        })
+        
+    def addError(self, test, err):
+        super().addError(test, err)
+        duration = time.time() - self.current_test_start
+        error_msg = str(err[1])
+        self.test_details.append({
+            'test': test,
+            'status': 'ERROR',
+            'duration': duration,
+            'message': error_msg[:100]
+        })
+        
+    def addFailure(self, test, err):
+        super().addFailure(test, err)
+        duration = time.time() - self.current_test_start
+        failure_msg = str(err[1])
+        self.test_details.append({
+            'test': test,
+            'status': 'FAIL',
+            'duration': duration,
+            'message': failure_msg[:100]
+        })
+        
+    def addSkip(self, test, reason):
+        super().addSkip(test, reason)
+        duration = time.time() - self.current_test_start
+        self.test_details.append({
+            'test': test,
+            'status': 'SKIP',
+            'duration': duration,
+            'message': reason
+        })
 
 
 def run_all_tests():
@@ -51,73 +106,102 @@ def run_all_tests():
     print("="*70)
     print()
     
-    # Run tests
+    # Run tests with custom result class
     start_time = time.time()
-    runner = unittest.TextTestRunner(verbosity=2)
+    stream = StringIO()
+    runner = unittest.TextTestRunner(stream=stream, verbosity=0, resultclass=DetailedTestResult)
     result = runner.run(suite)
     duration = time.time() - start_time
     
-    # Generate summary
-    print("\n" + "="*70)
-    print("TEST SUMMARY")
-    print("="*70)
+    # Organize tests by category
+    env_tests = [t for t in result.test_details if 'test_environment' in str(t['test'])]
+    angle_tests = [t for t in result.test_details if 'test_angles' in str(t['test'])]
+    api_tests = [t for t in result.test_details if 'test_api' in str(t['test'])]
     
+    # Generate detailed output
+    print("\n" + "="*100)
+    print(" "*35 + "TEST RESULTS SUMMARY")
+    print("="*100)
+    print()
+    
+    # Overall statistics
     tests_run = result.testsRun
-    successes = tests_run - len(result.failures) - len(result.errors)
+    successes = tests_run - len(result.failures) - len(result.errors) - len(result.skipped)
     failures = len(result.failures)
     errors = len(result.errors)
     skipped = len(result.skipped)
+    success_rate = (successes / tests_run * 100) if tests_run > 0 else 0
     
-    print(f"Tests Run:     {tests_run}")
-    print(f"Successes:     {successes}")
-    print(f"Failures:      {failures}")
-    print(f"Errors:        {errors}")
-    print(f"Skipped:       {skipped}")
-    print(f"Duration:      {duration:.2f}s")
+    print(f"{'Total Tests:':<20} {tests_run:>3}")
+    print(f"{'✅ Passed:':<20} {successes:>3}  ({success_rate:.1f}%)")
+    print(f"{'❌ Failed:':<20} {failures:>3}")
+    print(f"{'⚠️  Errors:':<20} {errors:>3}")
+    print(f"{'⊘ Skipped:':<20} {skipped:>3}")
+    print(f"{'⏱️  Duration:':<20} {duration:.2f}s")
     print()
     
-    # Category breakdown
-    print("CATEGORY BREAKDOWN:")
-    print("-" * 70)
-    
-    categories = {
-        'Angle Calculation': 0,
-        'State Machine': 0,
-        'Reward Calculation': 0,
-        'Adaptive Adjustment': 0,
-        'RL State Vector': 0,
-        'RL Reward Function': 0,
-        'Form Analysis API': 0
-    }
-    
-    # Count tests per category (approximate based on test class names)
-    for test_case in suite:
-        test_name = str(test_case)
+    # Category breakdown function
+    def print_category(title, tests, category_num):
+        if not tests:
+            return
+            
+        passed = sum(1 for t in tests if t['status'] == 'PASS')
+        failed = sum(1 for t in tests if t['status'] == 'FAIL')
+        errors = sum(1 for t in tests if t['status'] == 'ERROR')
+        skipped = sum(1 for t in tests if t['status'] == 'SKIP')
         
-        if 'TestAngle' in test_name:
-            categories['Angle Calculation'] += 1
-        elif 'TestEnvironmentStep' in test_name or 'TestSessionCompletion' in test_name:
-            categories['State Machine'] += 1
-        elif 'TestRewardFunction' in test_name:
-            categories['RL Reward Function'] += 1
-        elif 'TestDifficultyAdjustment' in test_name:
-            categories['Adaptive Adjustment'] += 1
-        elif 'TestStateVector' in test_name:
-            categories['RL State Vector'] += 1
-        elif 'TestFormAnalysisAPI' in test_name:
-            categories['Form Analysis API'] += 1
+        print("="*100)
+        print(f" {category_num}. {title}")
+        print("="*100)
+        print(f"Status: {passed}/{len(tests)} passed | {failed} failed | {errors} errors | {skipped} skipped")
+        print()
+        
+        # Table header
+        print(f"{'Test Name':<60} {'Status':<10} {'Time':<10} {'Result'}")
+        print("-"*100)
+        
+        # Print each test
+        for test_detail in tests:
+            test = test_detail['test']
+            status = test_detail['status']
+            duration_ms = test_detail['duration'] * 1000
+            message = test_detail['message']
+            
+            # Extract test name and description
+            test_str = str(test)
+            test_name = test_str.split(' ')[0].split('.')[-1]
+            
+            # Get docstring description
+            test_method = getattr(test.__class__, test._testMethodName, None)
+            description = ''
+            if test_method and test_method.__doc__:
+                description = test_method.__doc__.strip().split('\n')[0][:50]
+            
+            # Status symbol
+            status_symbol = {
+                'PASS': '✅ PASS',
+                'FAIL': '❌ FAIL',
+                'ERROR': '⚠️  ERROR',
+                'SKIP': '⊘ SKIP'
+            }.get(status, status)
+            
+            # Format duration
+            duration_str = f"{duration_ms:>6.1f}ms" if duration_ms < 1000 else f"{duration_ms/1000:>6.2f}s"
+            
+            # Print row
+            display_name = test_name if len(test_name) <= 55 else test_name[:52] + "..."
+            print(f"{display_name:<60} {status_symbol:<10} {duration_str:<10} {description}")
+            
+            # Print message for failures/errors/skips
+            if message and status != 'PASS':
+                print(f"{'':>60} └─ {message[:80]}")
+        
+        print()
     
-    # Print category summary
-    total_category_tests = 0
-    for category, count in categories.items():
-        if count > 0:
-            status = "✅ Pass" if result.wasSuccessful() else "⚠️  Check"
-            coverage = "100%" if result.wasSuccessful() else "Partial"
-            print(f"{category:25} {count:2} tests    {coverage:8}    {status}")
-            total_category_tests += count
-    
-    print("-" * 70)
-    print(f"{'TOTAL':25} {total_category_tests:2} tests")
+    # Print each category
+    print_category("✓ Environment Tests (RL Agent, State, Rewards, Fatigue)", env_tests, 1)
+    print_category("✓ Angle Calculation Tests (Joint Angles, Edge Cases)", angle_tests, 2)
+    print_category("✓ API Tests (Form Analysis, Predictions, Error Handling)", api_tests, 3)
     print()
     
     # Detailed failures

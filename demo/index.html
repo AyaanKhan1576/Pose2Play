@@ -589,6 +589,7 @@
             overflow-y: auto;
         }
     </style>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -809,6 +810,14 @@
         
         let currentExercise = 'squat';
         
+        // Socket.io connection for Unity bridge
+        let unitySocket = null;
+        let poseFrameCount = 0;
+        try {
+            unitySocket = io('http://localhost:5000');
+            unitySocket.on('connect', () => console.log('Unity bridge connected'));
+        } catch(e) { console.log('Unity bridge not available'); }
+
         // Main detection loop
         function detectPose() {
             if (webcam.readyState >= 2) {
@@ -826,6 +835,12 @@
                     
                     // Process exercise
                     processExercise(landmarks);
+
+                    // Forward to Unity via WebSocket bridge (~30fps)
+                    poseFrameCount++;
+                    if (unitySocket && unitySocket.connected && poseFrameCount % 2 === 0) {
+                        unitySocket.emit('pose_data', landmarks);
+                    }
                 }
             }
             

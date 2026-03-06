@@ -3,7 +3,7 @@
 > **A gamified, adaptive, AI-powered rehabilitation exercise system for ages 14-80**  
 > Complete RL-based difficulty optimization + real-time pose detection + gamification
 
-**Last Updated:** October 26, 2025  
+**Last Updated:** March 6, 2026  
 **Status:** ✅ Production Ready - Fully Trained & Integrated  
 **Total Documentation:** ~3500 lines consolidated from 5 separate guides
 
@@ -26,6 +26,7 @@
 13. [Performance Optimization](#performance-optimization)
 14. [FAQ & Troubleshooting](#faq--troubleshooting)
 15. [Quick Reference Commands](#quick-reference-commands)
+16. [Unity UDP Bridge](#unity-udp-bridge)
 
 ---
 
@@ -2546,6 +2547,11 @@ print(f"Completed: {done}")
 exit()
 ```
 
+### Install All Dependencies (run this if any module is missing)
+```powershell
+& "D:/university/fyp/milestones/mid eval/Pose2Play_BaseModel/.venv/Scripts/python.exe" -m pip install -r "D:/university/fyp/milestones/mid eval/Pose2Play_BaseModel/ml/requirements.txt" --progress-bar on
+```
+
 ### Phase 7: Web Integration
 ```powershell
 # Option 1: One-click start (EASIEST!)
@@ -2598,6 +2604,51 @@ pip install --upgrade -r requirements.txt
 
 # Clean and rebuild environment
 Remove-Item -Recurse -Force rl_env
+```
+
+---
+
+## 🎮 Unity UDP Bridge
+
+Streams live pose data from the web app to a Unity avatar via UDP.
+
+### Architecture
+```
+Browser (MediaPipe) → WebSocket → Flask api_server.py → UDP:5055 → Unity UDPReceiver.cs → Avatar IK
+```
+
+### Setup Summary
+- `ml/udp_pose_sender.py` — standalone Python sender (for testing without webapp)
+- `UDPReceiver.cs` — Unity script, attach to empty GameObject `PoseReceiver`, port 5055
+- `AvatarController.cs` — attach to Mixamo avatar, drives IK targets from pose data
+- Flask server now includes WebSocket (flask-socketio) + UDP forwarding built-in
+
+### Start (integrated with webapp)
+```powershell
+# 1. Press Play in Unity
+# 2. Start the Flask server:
+& "D:/university/fyp/milestones/mid eval/Pose2Play_BaseModel/.venv/Scripts/python.exe" "D:/university/fyp/milestones/mid eval/Pose2Play_BaseModel/ml/api_server.py"
+# 3. Open http://localhost:5000 and start detection
+```
+
+### Standalone test (no webapp)
+```powershell
+# Streams webcam pose directly to Unity
+& "D:/university/fyp/milestones/mid eval/Pose2Play_BaseModel/.venv/Scripts/python.exe" "D:/university/fyp/milestones/mid eval/Pose2Play_BaseModel/ml/udp_pose_sender.py"
+```
+
+### Unity Components
+| Component | Attached To | Purpose |
+|---|---|---|
+| `UDPReceiver.cs` | `PoseReceiver` (empty GameObject) | Receives UDP JSON, exposes `pose` data |
+| `AvatarController.cs` | X Bot avatar | Moves IK targets from pose data |
+| `Two Bone IK Constraint` | `IK_LeftArm/RightArm/LeftLeg/RightLeg` | Drives limb bones to target positions |
+
+### Key AvatarController Settings
+- **Body Scale:** `2.5` — tune if limbs over/under-reach
+- **Smoothing:** `12` — lower = more responsive, higher = smoother
+- **Ground Y:** match X Bot Y position in scene
+- **Avatar Hip:** drag `mixamorig:Hips` bone here
 python -m venv rl_env
 .\rl_env\Scripts\activate
 pip install -r requirements.txt
