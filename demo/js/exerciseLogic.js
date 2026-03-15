@@ -327,6 +327,13 @@ export class ExerciseManager {
     getCurrentPhase() {
         return this.currentPhase;
     }
+
+    getBaselineProgress() {
+        return {
+            count: this.baselineReps.length,
+            required: this.BASELINE_REP_COUNT
+        };
+    }
     
     // Setter methods
     setPersonalTarget(target) {

@@ -29,10 +29,12 @@ app = Flask(__name__,
 CORS(app, resources={r"/*": {"origins": "*"}})
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# UDP socket for forwarding pose data to Unity
-UNITY_UDP_IP = "127.0.0.1"
-UNITY_UDP_PORT = 5055
-_udp_sock = udp_socket.socket(udp_socket.AF_INET, udp_socket.SOCK_DGRAM)
+# UDP sockets for forwarding realtime data to Unity
+UNITY_UDP_IP = os.getenv("UNITY_UDP_IP", "127.0.0.1")
+UNITY_POSE_UDP_PORT = int(os.getenv("UNITY_POSE_UDP_PORT", "5055"))
+UNITY_DASHBOARD_UDP_PORT = int(os.getenv("UNITY_DASHBOARD_UDP_PORT", "5056"))
+_pose_udp_sock = udp_socket.socket(udp_socket.AF_INET, udp_socket.SOCK_DGRAM)
+_dashboard_udp_sock = udp_socket.socket(udp_socket.AF_INET, udp_socket.SOCK_DGRAM)
 
 LANDMARK_MAP = {
     "left_shoulder": 11, "right_shoulder": 12,
@@ -57,9 +59,38 @@ def handle_pose_data(landmarks):
             if idx < len(landmarks)
         }
         msg = json.dumps(pose).encode('utf-8')
-        _udp_sock.sendto(msg, (UNITY_UDP_IP, UNITY_UDP_PORT))
+        _pose_udp_sock.sendto(msg, (UNITY_UDP_IP, UNITY_POSE_UDP_PORT))
     except Exception as e:
         print(f"UDP forward error: {e}")
+
+
+@socketio.on('dashboard_data')
+def handle_dashboard_data(payload):
+    """Receive compact dashboard state from browser and forward to Unity via UDP"""
+    try:
+        if not isinstance(payload, dict):
+            return
+
+        dashboard = {
+            'type': 'dashboard_update',
+            'exercise': payload.get('exercise', 'squat'),
+            'phase': payload.get('phase', 'BASELINE'),
+            'repCount': int(payload.get('repCount', 0)),
+            'currentAngle': payload.get('currentAngle'),
+            'pushTarget': payload.get('pushTarget'),
+            'minimumThreshold': payload.get('minimumThreshold'),
+            'formQuality': payload.get('formQuality'),
+            'status': payload.get('status', ''),
+            'feedback': payload.get('feedback', ''),
+            'isCorrect': bool(payload.get('isCorrect', False)),
+            'calibration': payload.get('calibration', {'count': 0, 'required': 3}),
+            'timestamp': int(payload.get('timestamp', 0))
+        }
+
+        msg = json.dumps(dashboard).encode('utf-8')
+        _dashboard_udp_sock.sendto(msg, (UNITY_UDP_IP, UNITY_DASHBOARD_UDP_PORT))
+    except Exception as e:
+        print(f"Dashboard UDP forward error: {e}")
 
 # Load RL model for difficulty adjustment
 model_path = './models/dqn/DQN_rehab_final.zip'

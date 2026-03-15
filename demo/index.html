@@ -809,6 +809,22 @@
         };
         
         let currentExercise = 'squat';
+        const DASHBOARD_EMIT_INTERVAL_MS = 200;
+        let lastDashboardEmitAt = 0;
+        let dashboardState = {
+            exercise: currentExercise,
+            phase: exerciseManager.getCurrentPhase(),
+            repCount: 0,
+            currentAngle: null,
+            pushTarget: null,
+            minimumThreshold: null,
+            formQuality: '--',
+            status: 'Idle',
+            feedback: 'Select an exercise and click Start Detection',
+            isCorrect: false,
+            calibration: exerciseManager.getBaselineProgress(),
+            timestamp: Date.now()
+        };
         
         // Socket.io connection for Unity bridge
         let unitySocket = null;
@@ -817,6 +833,28 @@
             unitySocket = io('http://localhost:5000');
             unitySocket.on('connect', () => console.log('Unity bridge connected'));
         } catch(e) { console.log('Unity bridge not available'); }
+
+        function emitDashboardUpdate(partial = {}, force = false) {
+            if (!unitySocket || !unitySocket.connected) return;
+
+            const now = Date.now();
+            if (!force && now - lastDashboardEmitAt < DASHBOARD_EMIT_INTERVAL_MS) return;
+
+            dashboardState = {
+                ...dashboardState,
+                ...partial,
+                exercise: currentExercise,
+                phase: exerciseManager.getCurrentPhase(),
+                repCount: exerciseManager.getRepCount(),
+                pushTarget: exerciseManager.getPersonalTarget(),
+                minimumThreshold: exerciseManager.getMinimumThreshold(),
+                calibration: exerciseManager.getBaselineProgress(),
+                timestamp: now
+            };
+
+            unitySocket.emit('dashboard_data', dashboardState);
+            lastDashboardEmitAt = now;
+        }
 
         // Main detection loop
         function detectPose() {
@@ -865,6 +903,10 @@
             
             // Update current angle display
             uiManager.updateCurrentAngle(angle);
+            emitDashboardUpdate({
+                currentAngle: Math.round(angle),
+                status: exerciseManager.getCurrentPhase() === 'BASELINE' ? 'Calibrating' : 'Tracking movement'
+            });
             
             // Handle baseline establishment
             if (result && result.baseline) {
@@ -873,11 +915,23 @@
                     uiManager.updateTargetAngle(baselineResult.pushTarget);
                     uiManager.updateMinimumThreshold(baselineResult.minimumThreshold);
                     uiManager.updateFeedback(baselineResult.message);
+                    emitDashboardUpdate({
+                        status: 'Calibration complete',
+                        feedback: baselineResult.message,
+                        currentAngle: Math.round(angle)
+                    }, true);
                 } else {
+                    const progress = exerciseManager.getBaselineProgress();
                     const exerciseAction = currentExercise === 'shoulder' ? 'Raise your arm as high as you can!' : 
                                           currentExercise === 'squat' ? 'Squat as deep as you can!' :
                                           'Lift your leg as high as you can!';
-                    uiManager.updateFeedback(`Baseline ${baselineResult.count}/${baselineResult.required}: ${exerciseAction} 💪`);
+                    const calibrationMsg = `Baseline ${progress.count}/${progress.required}: ${exerciseAction} 💪`;
+                    uiManager.updateFeedback(calibrationMsg);
+                    emitDashboardUpdate({
+                        status: `Calibrating ${progress.count}/${progress.required}`,
+                        feedback: calibrationMsg,
+                        currentAngle: Math.round(angle)
+                    }, true);
                 }
                 return;
             }
@@ -885,6 +939,11 @@
             // Handle feedback messages
             if (result && result.feedback) {
                 uiManager.updateFeedback(result.feedback);
+                emitDashboardUpdate({
+                    status: 'Instruction',
+                    feedback: result.feedback,
+                    currentAngle: Math.round(angle)
+                }, true);
                 return;
             }
             
@@ -893,6 +952,11 @@
                 const repCount = exerciseManager.getRepCount();
                 uiManager.updateRepCount(repCount);
                 uiManager.updateFeedback(result.feedbackMsg);
+                emitDashboardUpdate({
+                    status: 'Rep completed',
+                    feedback: result.feedbackMsg,
+                    currentAngle: Math.round(angle)
+                }, true);
                 
                 // LSTM micro-adjustment (per rep)
                 if (result.angleSequence && result.angleSequence.length > 10) {
@@ -1007,6 +1071,14 @@
                         const sessionAngles = exerciseManager.getSessionAngles();
                         const sessionReps = exerciseManager.getSessionReps();
                         uiManager.updateFormAnalysis(sessionAngles, sessionReps, currentExercise, formResult);
+                        emitDashboardUpdate({
+                            formQuality: formResult.form_quality || dashboardState.formQuality,
+                            isCorrect: !!formResult.is_correct,
+                            status: formResult.is_correct ? 'Good form' : 'Correction needed',
+                            feedback: formResult.is_correct
+                                ? (formResult.feedback?.[0] || dashboardState.feedback)
+                                : (formResult.corrections?.[0] || dashboardState.feedback)
+                        });
                     }
                 });
         }
@@ -1056,6 +1128,18 @@
             mlIntegration.setSessionStartTime(sessionStartTime);
             
             exerciseManager.reset();
+            dashboardState = {
+                ...dashboardState,
+                phase: exerciseManager.getCurrentPhase(),
+                repCount: 0,
+                formQuality: '--',
+                isCorrect: false,
+                status: 'Session started - calibration',
+                feedback: 'Perform baseline reps',
+                calibration: exerciseManager.getBaselineProgress(),
+                timestamp: Date.now()
+            };
+            emitDashboardUpdate(dashboardState, true);
             
             const target = exerciseManager.getPersonalTarget();
             console.log(`Session started - Target: ${target || '--'}°`);
@@ -1071,6 +1155,10 @@
             document.getElementById('startBtn').disabled = false;
             document.getElementById('stopBtn').disabled = true;
             uiManager.updateFeedback('Detection stopped');
+            emitDashboardUpdate({
+                status: 'Paused',
+                feedback: 'Detection stopped'
+            }, true);
         };
 
         // Reset exercise
@@ -1097,6 +1185,13 @@
             document.getElementById('rlLastAction').textContent = '--';
             document.getElementById('rlStatus').textContent = 'Waiting for 5 reps...';
             document.getElementById('mlAdjustmentLog').innerHTML = '<div class="ml-log-entry">🤖 System ready. Start exercising to see ML analysis.</div>';
+            emitDashboardUpdate({
+                status: 'Reset',
+                feedback: 'Exercise reset',
+                currentAngle: null,
+                formQuality: '--',
+                isCorrect: false
+            }, true);
             
             console.log('Session reset - Ready for new session');
         };
@@ -1106,6 +1201,11 @@
             currentExercise = document.getElementById('exerciseSelect').value;
             exerciseManager.changeExercise(currentExercise);
             window.resetExercise();
+            emitDashboardUpdate({
+                exercise: currentExercise,
+                status: `Exercise selected: ${currentExercise}`,
+                feedback: 'Ready for calibration'
+            }, true);
             
             console.log(`Changed to ${currentExercise}`);
         };
