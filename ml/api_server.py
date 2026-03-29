@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, send_file
 from flask_cors import CORS
 from flask_socketio import SocketIO
 from stable_baselines3 import DQN
@@ -51,13 +51,48 @@ LANDMARK_MAP = {
 def handle_pose_data(landmarks):
     """Receive landmarks from browser and forward to Unity via UDP"""
     try:
-        pose = {
-            name: [round(landmarks[idx]['x'], 4),
-                   round(landmarks[idx]['y'], 4),
-                   round(landmarks[idx]['z'], 4)]
-            for name, idx in LANDMARK_MAP.items()
-            if idx < len(landmarks)
-        }
+        if landmarks is None:
+            return
+
+        # Socket.IO payload can arrive as a list or dict-like object depending on serializer.
+        def get_landmark_at(index):
+            if isinstance(landmarks, list):
+                if 0 <= index < len(landmarks):
+                    return landmarks[index]
+                return None
+
+            if isinstance(landmarks, dict):
+                if index in landmarks:
+                    return landmarks[index]
+                key = str(index)
+                return landmarks.get(key)
+
+            return None
+
+        def parse_landmark(index):
+            lm = get_landmark_at(index)
+            if not isinstance(lm, dict):
+                return None
+
+            if 'x' not in lm or 'y' not in lm or 'z' not in lm:
+                return None
+
+            try:
+                return [round(float(lm['x']), 4), round(float(lm['y']), 4), round(float(lm['z']), 4)]
+            except (TypeError, ValueError):
+                return None
+
+        pose = {}
+        for name, idx in LANDMARK_MAP.items():
+            parsed = parse_landmark(idx)
+            if parsed is not None:
+                pose[name] = parsed
+
+        # Require core joints before forwarding to Unity.
+        required = ['left_hip', 'right_hip', 'left_wrist', 'right_wrist', 'left_ankle', 'right_ankle']
+        if any(k not in pose for k in required):
+            return
+
         msg = json.dumps(pose).encode('utf-8')
         _pose_udp_sock.sendto(msg, (UNITY_UDP_IP, UNITY_POSE_UDP_PORT))
     except Exception as e:
@@ -496,6 +531,61 @@ def predict_quality():
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 400
+
+
+# ============================================================
+# TEXT-TO-SPEECH ENDPOINT (for VR voice cues)
+# ============================================================
+@app.route('/generate_tts', methods=['POST'])
+def generate_tts():
+    """Generate speech audio from text and return as WAV file"""
+    try:
+        import pyttsx3
+        import tempfile
+        
+        data = request.json or {}
+        text = data.get('text', 'Voice cue')
+        
+        if not text or len(text) > 1000:
+            return jsonify({'error': 'Invalid text'}), 400
+        
+        # Create speech synthesizer
+        engine = pyttsx3.init()
+        engine.setProperty('rate', 150)  # Speed: 150 wpm
+        engine.setProperty('volume', 1.0)  # Volume: 1.0 = max
+        
+        # Save to temporary file and return it directly.
+        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
+            temp_file = tmp.name
+
+        engine.save_to_file(text, temp_file)
+        engine.runAndWait()
+
+        if os.path.exists(temp_file):
+            response = send_file(
+                temp_file,
+                mimetype='audio/wav',
+                as_attachment=False,
+                conditional=False,
+            )
+
+            @response.call_on_close
+            def cleanup_temp_file():
+                try:
+                    if os.path.exists(temp_file):
+                        os.remove(temp_file)
+                except Exception:
+                    pass
+
+            return response
+        
+        return jsonify({'error': 'TTS generation failed'}), 500
+        
+    except Exception as e:
+        print(f"TTS error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':

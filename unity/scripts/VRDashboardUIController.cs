@@ -1,6 +1,7 @@
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
+using System.Collections.Generic;
 
 public class VRDashboardUIController : MonoBehaviour
 {
@@ -25,11 +26,33 @@ public class VRDashboardUIController : MonoBehaviour
     [SerializeField] private Color qualityWarn = new Color(0.95f, 0.60f, 0.14f);
     [SerializeField] private Color qualityBad = new Color(0.91f, 0.30f, 0.30f);
 
+    private void Awake()
+    {
+        if (dashboardReceiver == null)
+        {
+            dashboardReceiver = FindFirstObjectByType<VRDashboardReceiver>();
+            if (dashboardReceiver != null)
+            {
+                Debug.Log("[VRDashboardUIController] Auto-linked VRDashboardReceiver.");
+            }
+        }
+    }
+
+    private void Start()
+    {
+        ValidateBindings();
+    }
+
     private void OnEnable()
     {
         if (dashboardReceiver != null)
         {
+            dashboardReceiver.OnDashboardPacket -= HandleDashboardPacket;
             dashboardReceiver.OnDashboardPacket += HandleDashboardPacket;
+        }
+        else
+        {
+            Debug.LogWarning("[VRDashboardUIController] dashboardReceiver is not assigned.");
         }
     }
 
@@ -108,6 +131,29 @@ public class VRDashboardUIController : MonoBehaviour
         if (field != null)
         {
             field.text = value;
+        }
+    }
+
+    private void ValidateBindings()
+    {
+        var missing = new List<string>();
+
+        if (dashboardReceiver == null) missing.Add(nameof(dashboardReceiver));
+        if (exerciseText == null) missing.Add(nameof(exerciseText));
+        if (phaseText == null) missing.Add(nameof(phaseText));
+        if (repsText == null) missing.Add(nameof(repsText));
+        if (angleText == null) missing.Add(nameof(angleText));
+        if (targetText == null) missing.Add(nameof(targetText));
+        if (minText == null) missing.Add(nameof(minText));
+        if (qualityText == null) missing.Add(nameof(qualityText));
+        if (statusText == null) missing.Add(nameof(statusText));
+        if (feedbackText == null) missing.Add(nameof(feedbackText));
+        if (calibrationText == null) missing.Add(nameof(calibrationText));
+        if (qualityBarFill == null) missing.Add(nameof(qualityBarFill));
+
+        if (missing.Count > 0)
+        {
+            Debug.LogWarning($"[VRDashboardUIController] Missing bindings: {string.Join(", ", missing)}");
         }
     }
 }

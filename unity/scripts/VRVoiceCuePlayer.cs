@@ -1,6 +1,8 @@
 using System.Collections;
+using System.IO;
 using TMPro;
 using UnityEngine;
+using UnityEngine.Networking;
 
 public class VRVoiceCuePlayer : MonoBehaviour
 {
@@ -9,20 +11,20 @@ public class VRVoiceCuePlayer : MonoBehaviour
 
     [Header("Audio")]
     [SerializeField] private AudioSource audioSource;
-    [SerializeField] private AudioClip calibrationClip;
-    [SerializeField] private AudioClip squatDeeperClip;
-    [SerializeField] private AudioClip slowDownClip;
-    [SerializeField] private AudioClip goodFormClip;
-    [SerializeField] private AudioClip repCompleteClip;
 
-    [Header("UI Optional")]
-    [SerializeField] private TMP_Text nowPlayingText;
+    [Header("UI for Voice Feedback")]
+    [SerializeField] private TMP_Text voiceCueText;
 
-    [Header("Behavior")]
-    [SerializeField] private float minSecondsBetweenCues = 2.5f;
+    [Header("Backend")]
+    [SerializeField] private string ttsServerUrl = "http://localhost:5000";
+
+    [Header("Timing")]
+    [SerializeField] private float minSecondsBetweenCues = 1.0f;
+    [SerializeField] private float textDisplayDuration = 3.0f;
 
     private float _lastCueTime;
     private int _lastRepCount;
+    private bool _isFetchingAudio;
 
     private void OnEnable()
     {
@@ -42,61 +44,139 @@ public class VRVoiceCuePlayer : MonoBehaviour
 
     private void HandleDashboardPacket(DashboardPacket packet)
     {
-        if (packet == null || audioSource == null) return;
+        if (packet == null) return;
         if (Time.time - _lastCueTime < minSecondsBetweenCues) return;
+        if (_isFetchingAudio) return;
 
-        if (packet.phase == "BASELINE")
-        {
-            TryPlay(calibrationClip, "Calibration: follow the motion");
-            return;
-        }
-
+        // Track rep changes
         if (packet.repCount > _lastRepCount)
         {
             _lastRepCount = packet.repCount;
-            TryPlay(repCompleteClip, "Rep counted");
+            PlayVoiceCue($"Rep {packet.repCount}");
             return;
         }
 
-        string feedback = packet.feedback != null ? packet.feedback.ToLowerInvariant() : string.Empty;
+        // Handle form feedback
+        string feedback = packet.feedback != null ? packet.feedback.Trim() : string.Empty;
 
-        if (feedback.Contains("deeper"))
+        if (!string.IsNullOrEmpty(feedback))
         {
-            TryPlay(squatDeeperClip, "Squat deeper");
-            return;
-        }
+            // Form correction (contains warning symbol or negative keywords)
+            if (feedback.Contains("⚠️") || feedback.ToLower().Contains("avoid") || 
+                feedback.ToLower().Contains("too") || feedback.ToLower().Contains("incorrect"))
+            {
+                string cleanFeedback = feedback.Replace("⚠️", "").Trim();
+                PlayVoiceCue(cleanFeedback);
+                return;
+            }
 
-        if (feedback.Contains("slow down"))
-        {
-            TryPlay(slowDownClip, "Slow down your movement");
-            return;
-        }
-
-        if (packet.isCorrect)
-        {
-            TryPlay(goodFormClip, "Good form");
+            // Good form encouragement
+            if (packet.isCorrect)
+            {
+                PlayVoiceCue(feedback);
+            }
         }
     }
 
-    private void TryPlay(AudioClip clip, string caption)
+    /// <summary>
+    /// Request TTS audio from backend and play it
+    /// </summary>
+    private void PlayVoiceCue(string text)
     {
-        if (clip == null || audioSource == null) return;
-        if (audioSource.isPlaying) return;
-
-        audioSource.PlayOneShot(clip);
         _lastCueTime = Time.time;
+        StopAllCoroutines();
+        StartCoroutine(FetchAndPlayTTS(text));
+    }
 
-        if (nowPlayingText != null)
+    private IEnumerator FetchAndPlayTTS(string text)
+    {
+        _isFetchingAudio = true;
+
+        // Show text caption immediately
+        if (voiceCueText != null)
         {
-            StopAllCoroutines();
-            StartCoroutine(ShowCueCaption(caption));
+            voiceCueText.text = $"🔊 {text}";
+        }
+
+        // Prepare request to backend
+        using (UnityWebRequest request = new UnityWebRequest($"{ttsServerUrl}/generate_tts", "POST"))
+        {
+            string json = JsonUtility.ToJson(new TTSRequest { text = text });
+            request.uploadHandler = new UploadHandlerRaw(System.Text.Encoding.UTF8.GetBytes(json));
+            request.downloadHandler = new DownloadHandlerBuffer();
+            request.SetRequestHeader("Content-Type", "application/json");
+
+            yield return request.SendWebRequest();
+
+            if (request.result == UnityWebRequest.Result.Success)
+            {
+                // Convert downloaded audio to AudioClip
+                byte[] audioData = request.downloadHandler.data;
+                StartCoroutine(PlayAudioFromBytes(audioData, text));
+            }
+            else
+            {
+                Debug.LogWarning($"TTS request failed: {request.error}");
+                // Still show text even if audio fails
+                yield return new WaitForSeconds(textDisplayDuration);
+            }
+        }
+
+        _isFetchingAudio = false;
+    }
+
+    private IEnumerator PlayAudioFromBytes(byte[] audioData, string originalText)
+    {
+        // Save WAV to temporary file
+        string tempPath = Path.Combine(Application.persistentDataPath, "tts_audio.wav");
+        
+        File.WriteAllBytes(tempPath, audioData);
+
+        AudioClip clip = null;
+
+        // Load as AudioClip
+        using (UnityWebRequest www = UnityWebRequestMultimedia.GetAudioClip("file://" + tempPath, AudioType.WAV))
+        {
+            yield return www.SendWebRequest();
+
+            if (www.result == UnityWebRequest.Result.Success)
+            {
+                clip = DownloadHandlerAudioClip.GetContent(www);
+            }
+            else
+            {
+                Debug.LogWarning($"Audio load failed: {www.error}");
+            }
+        }
+
+        // Play audio if loaded
+        if (audioSource != null && clip != null)
+        {
+            audioSource.PlayOneShot(clip);
+            yield return new WaitForSeconds(clip.length);
+        }
+
+        // Wait a bit then clear text
+        yield return new WaitForSeconds(0.5f);
+        if (voiceCueText != null)
+        {
+            voiceCueText.text = string.Empty;
+        }
+
+        // Clean up temp file (non-blocking, can fail silently)
+        if (File.Exists(tempPath))
+        {
+            try
+            {
+                File.Delete(tempPath);
+            }
+            catch { }
         }
     }
 
-    private IEnumerator ShowCueCaption(string text)
+    [System.Serializable]
+    private class TTSRequest
     {
-        nowPlayingText.text = text;
-        yield return new WaitForSeconds(1.5f);
-        nowPlayingText.text = string.Empty;
+        public string text;
     }
 }
