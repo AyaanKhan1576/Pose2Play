@@ -88,9 +88,8 @@ def handle_pose_data(landmarks):
             if parsed is not None:
                 pose[name] = parsed
 
-        # Only require hips to keep avatar updates robust when MediaPipe temporarily
-        # misses wrists/ankles due framing or occlusion.
-        required = ['left_hip', 'right_hip']
+        # Require core joints before forwarding to Unity.
+        required = ['left_hip', 'right_hip', 'left_wrist', 'right_wrist', 'left_ankle', 'right_ankle']
         if any(k not in pose for k in required):
             return
 
