@@ -57,9 +57,17 @@ public class AvatarController : MonoBehaviour
     private Vector3 hipsTargetStartPos;
     private float standingHipY;
     private bool hasStandingCalibration;
+    private float _nextMissingReceiverLogTime;
 
     void Start()
     {
+        if (udpReceiver == null)
+        {
+            udpReceiver = FindFirstObjectByType<UDPReceiver>();
+            if (udpReceiver != null)
+                Debug.Log("[AvatarController] Auto-linked UDPReceiver.");
+        }
+
         if (disableAnimatorRootMotion)
         {
             Animator anim = GetComponent<Animator>();
@@ -100,7 +108,17 @@ public class AvatarController : MonoBehaviour
                 }
         #endif
 
-        if (udpReceiver == null || udpReceiver.pose == null)
+        if (udpReceiver == null)
+        {
+            if (Time.time >= _nextMissingReceiverLogTime)
+            {
+                Debug.LogWarning("[AvatarController] udpReceiver is not assigned. Assign PoseReceiver/UDPReceiver in Inspector.");
+                _nextMissingReceiverLogTime = Time.time + 2f;
+            }
+            return;
+        }
+
+        if (udpReceiver.pose == null)
             return;
 
         var p = udpReceiver.pose;

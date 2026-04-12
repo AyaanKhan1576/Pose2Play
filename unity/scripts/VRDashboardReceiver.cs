@@ -35,6 +35,12 @@ public class VRDashboardReceiver : MonoBehaviour
     [Header("UDP")]
     [SerializeField] private int listenPort = 5056;
 
+    [Tooltip("Desktop backend IPv4 address (example: 192.168.18.24). Do not use localhost for Quest builds.")]
+    [SerializeField] private string desktopBackendIp = "192.168.18.30";
+
+    [Tooltip("If enabled, only packets from Desktop Backend IP are accepted.")]
+    [SerializeField] private bool onlyAcceptDesktopIp = true;
+
     private UdpClient _udpClient;
     private Thread _receiveThread;
     private volatile bool _running;
@@ -42,6 +48,23 @@ public class VRDashboardReceiver : MonoBehaviour
     private readonly object _dataLock = new object();
     private DashboardPacket _latestPacket;
     private bool _hasNewPacket;
+    private long _lastPacketReceivedUtcTicks;
+
+    public string LastSenderIp { get; private set; } = "None";
+    public float SecondsSinceLastPacket
+    {
+        get
+        {
+            long ticks = Interlocked.Read(ref _lastPacketReceivedUtcTicks);
+            if (ticks <= 0)
+            {
+                return -1f;
+            }
+
+            TimeSpan delta = DateTime.UtcNow - new DateTime(ticks, DateTimeKind.Utc);
+            return (float)delta.TotalSeconds;
+        }
+    }
 
     public event Action<DashboardPacket> OnDashboardPacket;
 
@@ -78,9 +101,12 @@ public class VRDashboardReceiver : MonoBehaviour
     {
         if (_running) return;
 
+        ValidateDesktopIp();
+
         try
         {
             _udpClient = new UdpClient(listenPort);
+            _udpClient.Client.ReceiveTimeout = 500;
             _running = true;
             _receiveThread = new Thread(ReceiveLoop) { IsBackground = true };
             _receiveThread.Start();
@@ -121,6 +147,15 @@ public class VRDashboardReceiver : MonoBehaviour
             try
             {
                 byte[] bytes = _udpClient.Receive(ref endPoint);
+                string senderIp = endPoint.Address?.ToString() ?? "Unknown";
+
+                if (onlyAcceptDesktopIp && !IsAllowedSenderIp(senderIp))
+                {
+                    continue;
+                }
+
+                LastSenderIp = senderIp;
+                Interlocked.Exchange(ref _lastPacketReceivedUtcTicks, DateTime.UtcNow.Ticks);
                 string json = Encoding.UTF8.GetString(bytes);
                 var packet = JsonUtility.FromJson<DashboardPacket>(json);
 
@@ -141,5 +176,47 @@ public class VRDashboardReceiver : MonoBehaviour
                 Debug.LogWarning($"[VRDashboardReceiver] Parse/receive issue: {ex.Message}");
             }
         }
+    }
+
+    private void ValidateDesktopIp()
+    {
+        if (string.IsNullOrWhiteSpace(desktopBackendIp))
+        {
+            Debug.LogWarning("[VRDashboardReceiver] Desktop Backend IP is empty. Set your desktop IPv4 for Quest deployments.");
+            return;
+        }
+
+        string normalized = desktopBackendIp.Trim().ToLowerInvariant();
+        if (normalized == "localhost" || normalized == "127.0.0.1")
+        {
+            Debug.LogWarning("[VRDashboardReceiver] Desktop Backend IP is localhost/127.0.0.1. This will fail on Quest; use desktop LAN IPv4.");
+        }
+
+        if (!IPAddress.TryParse(desktopBackendIp, out _))
+        {
+            Debug.LogWarning("[VRDashboardReceiver] Desktop Backend IP is not a valid IPv4/IPv6 string.");
+        }
+    }
+
+    private bool IsAllowedSenderIp(string senderIp)
+    {
+        if (string.IsNullOrWhiteSpace(desktopBackendIp))
+        {
+            return true;
+        }
+
+        if (senderIp == desktopBackendIp)
+        {
+            return true;
+        }
+
+#if UNITY_EDITOR
+        if (senderIp == "127.0.0.1" || senderIp == "::1")
+        {
+            return true;
+        }
+#endif
+
+        return false;
     }
 }

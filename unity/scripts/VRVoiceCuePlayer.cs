@@ -25,13 +25,21 @@ public class VRVoiceCuePlayer : MonoBehaviour
     private float _lastCueTime;
     private int _lastRepCount;
     private bool _isFetchingAudio;
+    private float _nextRelinkTime;
+
+    private void Start()
+    {
+        if (audioSource == null)
+        {
+            audioSource = GetComponent<AudioSource>();
+        }
+
+        TrySubscribeDashboardReceiver();
+    }
 
     private void OnEnable()
     {
-        if (dashboardReceiver != null)
-        {
-            dashboardReceiver.OnDashboardPacket += HandleDashboardPacket;
-        }
+        TrySubscribeDashboardReceiver();
     }
 
     private void OnDisable()
@@ -39,6 +47,15 @@ public class VRVoiceCuePlayer : MonoBehaviour
         if (dashboardReceiver != null)
         {
             dashboardReceiver.OnDashboardPacket -= HandleDashboardPacket;
+        }
+    }
+
+    private void Update()
+    {
+        if (dashboardReceiver == null && Time.time >= _nextRelinkTime)
+        {
+            TrySubscribeDashboardReceiver();
+            _nextRelinkTime = Time.time + 2f;
         }
     }
 
@@ -178,5 +195,19 @@ public class VRVoiceCuePlayer : MonoBehaviour
     private class TTSRequest
     {
         public string text;
+    }
+
+    private void TrySubscribeDashboardReceiver()
+    {
+        if (dashboardReceiver == null)
+        {
+            dashboardReceiver = FindFirstObjectByType<VRDashboardReceiver>();
+        }
+
+        if (dashboardReceiver != null)
+        {
+            dashboardReceiver.OnDashboardPacket -= HandleDashboardPacket;
+            dashboardReceiver.OnDashboardPacket += HandleDashboardPacket;
+        }
     }
 }

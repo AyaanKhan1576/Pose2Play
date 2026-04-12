@@ -126,6 +126,13 @@ public class SkeletonOverlay : MonoBehaviour
     [Tooltip("Show live rehab metrics (activation/symmetry/control) in legend.")]
     public bool showBiofeedbackMetrics = true;
 
+    [Tooltip("Scales the bottom-right legend UI (panel, labels, bars) without changing world overlay size.")]
+    [Range(0.75f, 2.8f)]
+    public float legendUIScale = 1.45f;
+
+    [Tooltip("Distance from the bottom-right screen corner for the legend anchor.")]
+    public Vector2 legendScreenMargin = new Vector2(95f, 135f);
+
     [Tooltip("How quickly activation intensities respond to movement.")]
     [Range(1f, 18f)]
     public float activationSmoothing = 8f;
@@ -420,10 +427,16 @@ public class SkeletonOverlay : MonoBehaviour
     {
         ExerciseProfile profile = GetCurrentProfile();
         Vector2 cornerPos = GetLegendCornerPosition();
+        Rect panelRect = new Rect(cornerPos.x - 150f, cornerPos.y - 175f, 250f, 290f);
+        Matrix4x4 previousMatrix = GUI.matrix;
+        float uiScale = Mathf.Max(0.75f, legendUIScale);
+
+        // Scale around the panel's bottom-right corner so the dashboard grows outward consistently.
+        GUIUtility.ScaleAroundPivot(new Vector2(uiScale, uiScale), new Vector2(panelRect.xMax, panelRect.yMax));
 
         // Draw semi-transparent background panel
         GUI.backgroundColor = _panelColor;
-        GUI.Box(new Rect(cornerPos.x - 150f, cornerPos.y - 175f, 250f, 290f), "");
+        GUI.Box(panelRect, "");
         GUI.backgroundColor = Color.white;
 
         if (showExerciseLabel)
@@ -458,6 +471,8 @@ public class SkeletonOverlay : MonoBehaviour
         {
             DrawMuscleLegend(cornerPos, profile);
         }
+
+        GUI.matrix = previousMatrix;
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -1598,7 +1613,7 @@ public class SkeletonOverlay : MonoBehaviour
     // ─────────────────────────────────────────────────────────────────────
     private Vector2 GetLegendCornerPosition()
     {
-        return new Vector2(Screen.width - 70, Screen.height - 100);
+        return new Vector2(Screen.width - legendScreenMargin.x, Screen.height - legendScreenMargin.y);
     }
 
     // ─────────────────────────────────────────────────────────────────────
