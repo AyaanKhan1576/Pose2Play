@@ -110,15 +110,15 @@ export function formatQualityScore(qualityScore) {
  */
 export function getQualityFeedback(qualityScore) {
     if (qualityScore >= 0.9) {
-        return "🌟 Perfect form! Excellent execution!";
+        return "Perfect form. Excellent execution.";
     } else if (qualityScore >= 0.8) {
-        return "✅ Great job! Form is looking good!";
+        return "Great job. Form is looking good.";
     } else if (qualityScore >= 0.7) {
-        return "👍 Good effort! Minor improvements needed.";
+        return "Good effort. Minor improvements needed.";
     } else if (qualityScore >= 0.5) {
-        return "⚠️ Fair form. Focus on controlled movement.";
+        return "Fair form. Focus on controlled movement.";
     } else {
-        return "❌ Form needs work. Slow down and focus on technique.";
+        return "Form needs work. Slow down and focus on technique.";
     }
 }
 
@@ -129,7 +129,7 @@ export function getQualityFeedback(qualityScore) {
  */
 export function logPrediction(result) {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('📊 LSTM Quality Prediction Results');
+    console.log('LSTM Quality Prediction Results');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log(`Quality Score: ${(result.quality_score * 100).toFixed(1)}%`);
     console.log(`Rep ROM: ${result.rep_rom.toFixed(1)}°`);
@@ -137,7 +137,7 @@ export function logPrediction(result) {
     console.log(`Feedback: ${getQualityFeedback(result.quality_score)}`);
     
     if (result.error) {
-        console.warn(`⚠️ Error occurred: ${result.error}`);
+        console.warn(`Error occurred: ${result.error}`);
     }
     
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');

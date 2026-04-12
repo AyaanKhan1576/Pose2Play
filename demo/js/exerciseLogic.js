@@ -29,7 +29,7 @@ export class ExerciseManager {
         if (this.currentPhase === 'BASELINE') {
             if (this.currentState === 'STANDING' && kneeAngle < 160) {
                 this.currentState = 'DESCENDING';
-                return { feedback: `Baseline ${this.baselineReps.length + 1}/${this.BASELINE_REP_COUNT}: Squat down! 💪` };
+                return { feedback: `Baseline ${this.baselineReps.length + 1}/${this.BASELINE_REP_COUNT}: Squat down.` };
             } else if (this.currentState === 'DESCENDING' && kneeAngle > 160) {
                 this.currentState = 'STANDING';
                 const achievedAngle = Math.min(...this.sessionAngles.slice(-30));
@@ -42,7 +42,7 @@ export class ExerciseManager {
         // TRAINING MODE
         if (this.currentState === 'STANDING' && kneeAngle < 160) {
             this.currentState = 'DESCENDING';
-            return { feedback: 'Keep going down! 💪' };
+            return { feedback: 'Keep going down.' };
         } 
         else if (this.currentState === 'DESCENDING' && kneeAngle <= this.minimumThreshold) {
             // Rep counts if minimum threshold reached
@@ -64,14 +64,14 @@ export class ExerciseManager {
             let isPersonalBest = false;
             
             if (reachedPushTarget) {
-                feedbackMsg = `🎯 PUSH TARGET! ${Math.round(achieved)}°`;
+                feedbackMsg = `Push target reached: ${Math.round(achieved)}°`;
             } else {
-                feedbackMsg = `✅ Rep counted! ${Math.round(achieved)}° (Push: ${Math.round(this.personalTarget)}°)`;
+                feedbackMsg = `Rep counted: ${Math.round(achieved)}° (Push: ${Math.round(this.personalTarget)}°)`;
             }
             
             if (achieved < this.userBaseline) {
                 this.userBaseline = achieved;
-                feedbackMsg = `🏆 NEW PERSONAL BEST: ${Math.round(achieved)}°!`;
+                feedbackMsg = `New personal best: ${Math.round(achieved)}°`;
                 isPersonalBest = true;
             }
             
@@ -107,7 +107,7 @@ export class ExerciseManager {
         if (this.currentPhase === 'BASELINE') {
             if (this.currentState === 'STANDING' && hipAngle < 150) {
                 this.currentState = 'LIFTING';
-                return { feedback: `Baseline ${this.baselineReps.length + 1}/${this.BASELINE_REP_COUNT}: Lift your leg! 💪` };
+                return { feedback: `Baseline ${this.baselineReps.length + 1}/${this.BASELINE_REP_COUNT}: Lift your leg.` };
             } else if (this.currentState === 'LIFTING' && hipAngle > 170) {
                 this.currentState = 'STANDING';
                 const achievedAngle = Math.min(...this.sessionAngles.slice(-30));
@@ -120,7 +120,7 @@ export class ExerciseManager {
         // TRAINING MODE
         if (this.currentState === 'STANDING' && hipAngle < 150) {
             this.currentState = 'LIFTING';
-            return { feedback: 'Keep lifting! 💪' };
+            return { feedback: 'Keep lifting.' };
         } 
         else if (this.currentState === 'LIFTING' && hipAngle <= this.minimumThreshold) {
             // Rep counts if minimum threshold reached
@@ -142,14 +142,14 @@ export class ExerciseManager {
             let isPersonalBest = false;
             
             if (reachedPushTarget) {
-                feedbackMsg = `🎯 PUSH TARGET! ${Math.round(achieved)}°`;
+                feedbackMsg = `Push target reached: ${Math.round(achieved)}°`;
             } else {
-                feedbackMsg = `✅ Rep counted! ${Math.round(achieved)}° (Push: ${Math.round(this.personalTarget)}°)`;
+                feedbackMsg = `Rep counted: ${Math.round(achieved)}° (Push: ${Math.round(this.personalTarget)}°)`;
             }
             
             if (achieved < this.userBaseline) {
                 this.userBaseline = achieved;
-                feedbackMsg = `🏆 NEW PERSONAL BEST: ${Math.round(achieved)}°!`;
+                feedbackMsg = `New personal best: ${Math.round(achieved)}°`;
                 isPersonalBest = true;
             }
             
@@ -186,7 +186,7 @@ export class ExerciseManager {
             if (this.currentState === 'STANDING' && shoulderAngle > 30) {
                 this.currentState = 'RAISING';
                 this.currentRepAngleSequence = [];
-                return { feedback: `Baseline ${this.baselineReps.length + 1}/${this.BASELINE_REP_COUNT}: Keep raising! 💪` };
+                return { feedback: `Baseline ${this.baselineReps.length + 1}/${this.BASELINE_REP_COUNT}: Keep raising.` };
             } else if (this.currentState === 'RAISING' && shoulderAngle < 30) {
                 this.currentState = 'STANDING';
                 const achievedAngle = Math.max(...this.sessionAngles.slice(-30));
@@ -200,7 +200,7 @@ export class ExerciseManager {
         if (this.currentState === 'STANDING' && shoulderAngle > 30) {
             this.currentState = 'RAISING';
             this.currentRepAngleSequence = [];
-            return { feedback: 'Keep raising! 💪' };
+            return { feedback: 'Keep raising.' };
         } 
         else if (this.currentState === 'RAISING' && shoulderAngle >= this.minimumThreshold) {
             // Rep counts if minimum threshold reached
@@ -222,14 +222,14 @@ export class ExerciseManager {
             let isPersonalBest = false;
             
             if (reachedPushTarget) {
-                feedbackMsg = `🎯 PUSH TARGET! ${Math.round(achieved)}°`;
+                feedbackMsg = `Push target reached: ${Math.round(achieved)}°`;
             } else {
-                feedbackMsg = `✅ Rep counted! ${Math.round(achieved)}° (Push: ${Math.round(this.personalTarget)}°)`;
+                feedbackMsg = `Rep counted: ${Math.round(achieved)}° (Push: ${Math.round(this.personalTarget)}°)`;
             }
             
             if (achieved > this.userBaseline) {
                 this.userBaseline = achieved;
-                feedbackMsg = `🏆 NEW PERSONAL BEST: ${Math.round(achieved)}°!`;
+                feedbackMsg = `New personal best: ${Math.round(achieved)}°`;
                 isPersonalBest = true;
             }
             
@@ -257,7 +257,7 @@ export class ExerciseManager {
             const exerciseAction = this.currentExercise === 'shoulder' ? 'Raise your arm as high as you can!' : 
                                   this.currentExercise === 'squat' ? 'Squat as deep as you can!' :
                                   'Lift your leg as high as you can!';
-            return { complete: false, message: `Baseline ${this.baselineReps.length}/${this.BASELINE_REP_COUNT}: ${exerciseAction} 💪` };
+            return { complete: false, message: `Baseline ${this.baselineReps.length}/${this.BASELINE_REP_COUNT}: ${exerciseAction}` };
         }
         
         // Calculate baseline and set dual targets
@@ -283,7 +283,7 @@ export class ExerciseManager {
             baseline: this.userBaseline,
             minimumThreshold: this.minimumThreshold,
             pushTarget: this.personalTarget,
-            message: `✅ Baseline: ${Math.round(this.userBaseline)}° | Min: ${Math.round(this.minimumThreshold)}° | Push: ${Math.round(this.personalTarget)}°`
+            message: `Baseline: ${Math.round(this.userBaseline)}° | Min: ${Math.round(this.minimumThreshold)}° | Push: ${Math.round(this.personalTarget)}°`
         };
     }
 

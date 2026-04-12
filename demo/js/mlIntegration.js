@@ -34,7 +34,7 @@ export class MLIntegration {
             
             // Log results
             console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-            console.log('🤖 LSTM Quality Analysis');
+            console.log('LSTM Quality Analysis');
             console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
             console.log(`Quality Score: ${(result.quality_score * 100).toFixed(1)}%`);
             console.log(`Rep ROM: ${result.rep_rom.toFixed(1)}°`);
@@ -50,11 +50,11 @@ export class MLIntegration {
                 const adjustment = lstmSuggestion - currentTarget;
                 
                 if (Math.abs(adjustment) <= 2) {
-                    console.log(`🧠 LSTM micro-adjustment: ${currentTarget}° → ${lstmSuggestion}° (quality: ${(result.quality_score * 100).toFixed(0)}%)`);
+                    console.log(`LSTM micro-adjustment: ${currentTarget}° → ${lstmSuggestion}° (quality: ${(result.quality_score * 100).toFixed(0)}%)`);
                     newTarget = lstmSuggestion;
                     this.lstmAdjustmentCount++;
                 } else {
-                    console.log(`🧠 LSTM suggests ${lstmSuggestion}° (deferred to RL for large changes)`);
+                    console.log(`LSTM suggests ${lstmSuggestion}° (deferred to RL for large changes)`);
                 }
             }
             
@@ -150,7 +150,7 @@ export class MLIntegration {
                 this.rlAdjustmentCount++;
             }
             
-            console.log(`🎯 RL Action: ${actionName} | Target: ${currentTarget}° → ${newTarget}°`);
+            console.log(`RL Action: ${actionName} | Target: ${currentTarget}° → ${newTarget}°`);
             
             return {
                 newTarget,

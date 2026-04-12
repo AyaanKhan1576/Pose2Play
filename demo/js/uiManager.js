@@ -84,7 +84,7 @@ export class UIManager {
             this.elements.formQuality.className = 'form-metric-value ' + 
                 (qualityPercent >= 85 ? 'good' : qualityPercent >= 70 ? 'warning' : 'error');
             
-            this.elements.formStatus.textContent = formResult.is_correct ? '✅ Correct' : '⚠️ Needs Work';
+            this.elements.formStatus.textContent = formResult.is_correct ? 'Correct' : 'Needs Work';
             this.elements.formStatus.className = 'form-metric-value ' + (formResult.is_correct ? 'good' : 'warning');
         }
 
@@ -145,7 +145,7 @@ export class UIManager {
         this.elements.totalRP.textContent = userRewards.totalRP;
         this.elements.sessionRP.textContent = sessionEarned;
         this.elements.currentLevel.textContent = newLevel;
-        this.elements.streakDays.textContent = userRewards.streakDays + ' 🔥';
+        this.elements.streakDays.textContent = String(userRewards.streakDays);
         this.elements.levelName.textContent = levelName;
         this.elements.levelProgress.style.width = progressPercent + '%';
         
@@ -153,19 +153,19 @@ export class UIManager {
         this.elements.achievementList.innerHTML = '';
         const achievements = [];
         
-        if (repCount >= 10) achievements.push('🏆 10 Reps Champion');
-        if (repCount >= 20) achievements.push('💪 20 Rep Warrior');
-        if (userRewards.streakDays >= 3) achievements.push('🔥 3-Day Streak');
-        if (userRewards.streakDays >= 7) achievements.push('⭐ Week Warrior');
-        if (newLevel >= 3) achievements.push('📈 Level 3 Reached');
-        if (newLevel >= 5) achievements.push('🎯 Level 5 Master');
-        if (sessionEarned >= 200) achievements.push('💎 200+ RP Session');
+        if (repCount >= 10) achievements.push('10 Reps Champion');
+        if (repCount >= 20) achievements.push('20 Rep Warrior');
+        if (userRewards.streakDays >= 3) achievements.push('3-Day Streak');
+        if (userRewards.streakDays >= 7) achievements.push('Week Warrior');
+        if (newLevel >= 3) achievements.push('Level 3 Reached');
+        if (newLevel >= 5) achievements.push('Level 5 Master');
+        if (sessionEarned >= 200) achievements.push('200+ RP Session');
         if (personalTarget && userBaseline && Math.abs(personalTarget - userBaseline) >= 10) {
-            achievements.push('🚀 10° Improvement');
+            achievements.push('10 Degree Improvement');
         }
         
         if (achievements.length === 0) {
-            achievements.push('🎮 Keep exercising to unlock achievements!');
+            achievements.push('Keep exercising to unlock achievements.');
         }
         
         achievements.forEach(achievement => {
@@ -175,7 +175,7 @@ export class UIManager {
             this.elements.achievementList.appendChild(item);
         });
         
-        this.updateFeedback(`🎉 Earned ${sessionEarned} RP! Level ${newLevel} - ${levelName}`);
-        console.log(`🎮 Gamification: ${sessionEarned} RP earned, Level ${newLevel}, ${achievements.length} achievements`);
+        this.updateFeedback(`Earned ${sessionEarned} RP. Level ${newLevel} - ${levelName}`);
+        console.log(`Gamification: ${sessionEarned} RP earned, Level ${newLevel}, ${achievements.length} achievements`);
     }
 }
