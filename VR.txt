@@ -13,3 +13,5 @@ Builds folder path: D:\University\FYP\VR\VR_Test_URP\Pose2Play\VR_Builds
 
  Play Mode: START_PHASE7.ps1
  Quest Mode: START_PHASE7.ps1 -Mode Quest
+ Local: START_PHASE7.ps1 -Mode Local
+ 

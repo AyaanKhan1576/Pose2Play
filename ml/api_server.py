@@ -33,8 +33,27 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 UNITY_UDP_IP = os.getenv("UNITY_UDP_IP", "127.0.0.1")
 UNITY_POSE_UDP_PORT = int(os.getenv("UNITY_POSE_UDP_PORT", "5055"))
 UNITY_DASHBOARD_UDP_PORT = int(os.getenv("UNITY_DASHBOARD_UDP_PORT", "5056"))
+
+# Parse comma-separated UDP targets (e.g., "127.0.0.1,192.168.18.30")
+UNITY_UDP_TARGETS = [ip.strip() for ip in UNITY_UDP_IP.split(",") if ip.strip()]
+if not UNITY_UDP_TARGETS:
+    UNITY_UDP_TARGETS = ["127.0.0.1"]
+
 _pose_udp_sock = udp_socket.socket(udp_socket.AF_INET, udp_socket.SOCK_DGRAM)
 _dashboard_udp_sock = udp_socket.socket(udp_socket.AF_INET, udp_socket.SOCK_DGRAM)
+
+# Enable broadcast for Quest mode
+_pose_udp_sock.setsockopt(udp_socket.SOL_SOCKET, udp_socket.SO_REUSEADDR, 1)
+_dashboard_udp_sock.setsockopt(udp_socket.SOL_SOCKET, udp_socket.SO_REUSEADDR, 1)
+_pose_udp_sock.setsockopt(udp_socket.SOL_SOCKET, udp_socket.SO_BROADCAST, 1)
+_dashboard_udp_sock.setsockopt(udp_socket.SOL_SOCKET, udp_socket.SO_BROADCAST, 1)
+
+# UDP send attempt counters to reduce error spam
+_pose_udp_failures = 0
+_dashboard_udp_failures = 0
+_pose_udp_success = 0
+_dashboard_udp_success = 0
+_udp_error_reported = False
 
 LANDMARK_MAP = {
     "left_shoulder": 11, "right_shoulder": 12,
@@ -94,9 +113,25 @@ def handle_pose_data(landmarks):
             return
 
         msg = json.dumps(pose).encode('utf-8')
-        _pose_udp_sock.sendto(msg, (UNITY_UDP_IP, UNITY_POSE_UDP_PORT))
+        sent_any = False
+        for target_ip in UNITY_UDP_TARGETS:
+            try:
+                _pose_udp_sock.sendto(msg, (target_ip, UNITY_POSE_UDP_PORT))
+                sent_any = True
+            except (OSError, BlockingIOError, ConnectionError) as udp_err:
+                global _pose_udp_failures, _udp_error_reported
+                _pose_udp_failures += 1
+                # Print first send error only once to avoid log spam.
+                if not _udp_error_reported:
+                    print(f"⚠️  UDP forwarding warning for target {target_ip}:{UNITY_POSE_UDP_PORT}: {udp_err}")
+                    print(f"   💡 Continuing with other UDP targets: {UNITY_UDP_TARGETS}")
+                    _udp_error_reported = True
+
+        if sent_any:
+            global _pose_udp_success
+            _pose_udp_success += 1
     except Exception as e:
-        print(f"UDP forward error: {e}")
+        print(f"Pose data handling error: {e}")
 
 
 @socketio.on('dashboard_data')
@@ -123,9 +158,21 @@ def handle_dashboard_data(payload):
         }
 
         msg = json.dumps(dashboard).encode('utf-8')
-        _dashboard_udp_sock.sendto(msg, (UNITY_UDP_IP, UNITY_DASHBOARD_UDP_PORT))
+        dashboard_sent_any = False
+        for target_ip in UNITY_UDP_TARGETS:
+            try:
+                _dashboard_udp_sock.sendto(msg, (target_ip, UNITY_DASHBOARD_UDP_PORT))
+                dashboard_sent_any = True
+            except (OSError, BlockingIOError, ConnectionError):
+                global _dashboard_udp_failures
+                _dashboard_udp_failures += 1
+                # Silent to keep dashboard logs clean.
+
+        if dashboard_sent_any:
+            global _dashboard_udp_success
+            _dashboard_udp_success += 1
     except Exception as e:
-        print(f"Dashboard UDP forward error: {e}")
+        print(f"Dashboard data handling error: {e}")
 
 # Load RL model for difficulty adjustment
 model_path = './models/dqn/DQN_rehab_final.zip'
@@ -597,8 +644,18 @@ if __name__ == '__main__':
     print(f"  ✅ Form Classifier:         {form_classifier is not None}")
     print(f"  ✅ LSTM Quality Model:      {lstm_model is not None}")
     print(f"  ✅ Personalizer:            {personalizer is not None}")
+    print("\nNetwork Configuration:")
+    targets_str = ", ".join([f"{ip}:{UNITY_POSE_UDP_PORT}" for ip in UNITY_UDP_TARGETS])
+    print(f"  📡 UDP Pose Target(s):      {targets_str}")
+    targets_dash_str = ", ".join([f"{ip}:{UNITY_DASHBOARD_UDP_PORT}" for ip in UNITY_UDP_TARGETS])
+    print(f"  📡 UDP Dashboard Target(s): {targets_dash_str}")
+    print(f"  ℹ️  Unity Play mode setup: .\START_PHASE7.ps1 -Mode Local (or -Mode Quest for VR)")
+    server_host = os.getenv('POSE2PLAY_SERVER_HOST', 'localhost')
+    server_port = int(os.getenv('POSE2PLAY_SERVER_PORT', '5000'))
+    browser_host = 'localhost' if server_host == '0.0.0.0' else server_host
+
     print("\n" + "="*60)
-    print("🌐 Open in browser: http://localhost:5000")
+    print(f"🌐 Open in browser: http://{browser_host}:{server_port}")
     print("📷 Make sure to ALLOW camera access!")
     print("="*60 + "\n")
-    socketio.run(app, host='localhost', port=5000, debug=False)
+    socketio.run(app, host=server_host, port=server_port, debug=False)
