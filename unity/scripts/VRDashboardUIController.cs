@@ -59,6 +59,8 @@ public class VRDashboardUIController : MonoBehaviour
 
     [Header("Visual")]
     [SerializeField] private Image qualityBarFill;
+    [Tooltip("Optional: assign the RectTransform that represents the whole quality bar (track + fill). If left empty, the script will try to move a safe parent of qualityBarFill.")]
+    [SerializeField] private RectTransform qualityBarRoot;
     [SerializeField] private Color qualityGood = new Color(0.30f, 0.72f, 0.47f);
     [SerializeField] private Color qualityWarn = new Color(0.95f, 0.60f, 0.14f);
     [SerializeField] private Color qualityBad = new Color(0.91f, 0.30f, 0.30f);
@@ -77,6 +79,9 @@ public class VRDashboardUIController : MonoBehaviour
     [SerializeField] private bool useUnifiedCardBackground = true;
     [SerializeField] private Color unifiedCardColor = new Color(0.07f, 0.11f, 0.16f, 0.66f);
     [SerializeField] private Vector2 unifiedCardPadding = new Vector2(22f, 16f);
+    [Tooltip("Adds extra top extension so the game header has breathing room.")]
+    [Range(0f, 120f)]
+    [SerializeField] private float unifiedCardExtraTop = 14f;
     [Tooltip("Adds extra downward extension so the feedback row remains inside the card.")]
     [Range(0f, 120f)]
     [SerializeField] private float unifiedCardExtraBottom = 50f;
@@ -86,10 +91,61 @@ public class VRDashboardUIController : MonoBehaviour
     [Range(30, 220)]
     [SerializeField] private int maxFeedbackCharacters = 90;
 
+    [Header("Game HUD Skin")]
+    [SerializeField] private bool useGameHudSkin = true;
+    [SerializeField] private bool applySideLayoutInAllModes = true;
+    [SerializeField] private bool useSplitSideLayout = true;
+    [SerializeField] private int scorePerRep = 120;
+    [SerializeField] private int scorePerAccuracyPoint = 4;
+    [SerializeField] private int scorePerLevel = 1200;
+    [SerializeField] private Color scoreColor = new Color(0.97f, 0.81f, 0.22f, 0.98f);
+    [SerializeField] private Color rankBronze = new Color(0.77f, 0.56f, 0.34f, 0.98f);
+    [SerializeField] private Color rankSilver = new Color(0.77f, 0.82f, 0.90f, 0.98f);
+    [SerializeField] private Color rankGold = new Color(0.98f, 0.86f, 0.35f, 0.98f);
+    [SerializeField] private Color rankPlatinum = new Color(0.51f, 0.93f, 0.93f, 0.98f);
+    [SerializeField] private Vector2 leftHudViewport = new Vector2(0.03f, 0.86f);
+    [SerializeField] private Vector2 rightHudViewport = new Vector2(0.74f, 0.86f);
+    [SerializeField] private Vector2 tickerViewport = new Vector2(0.50f, 0.08f);
+    [Range(0.01f, 0.18f)]
+    [SerializeField] private float hudRowStep = 0.045f;
+    [SerializeField] private Vector2 leftHudSize = new Vector2(0.32f, 0.24f);
+    [SerializeField] private Vector2 rightHudSize = new Vector2(0.24f, 0.20f);
+    [SerializeField] private Vector2 tickerHudSize = new Vector2(0.58f, 0.08f);
+    [SerializeField] private float hudRowSpacingPixels = 32f;
+    [SerializeField] private bool enableHudChrome = true;
+    [SerializeField] private Color hudPanelColor = new Color(0.03f, 0.07f, 0.13f, 0.74f);
+    [SerializeField] private Color hudPanelBorderColor = new Color(0.26f, 0.74f, 1f, 0.55f);
+    [SerializeField] private Color hudTickerColor = new Color(0.02f, 0.04f, 0.08f, 0.82f);
+    [SerializeField] private Color hudProgressTrackColor = new Color(1f, 1f, 1f, 0.18f);
+
+    [Header("Gamification Overlay")]
+    [SerializeField] private bool enableGameOverlay = true;
+    [SerializeField] private TMP_Text gameOverlayScoreText;
+    [SerializeField] private TMP_Text gameOverlayLevelText;
+    [SerializeField] private TMP_Text gameOverlayComboText;
+    [SerializeField] private TMP_Text gameOverlayAchievementText;
+    [SerializeField] private float scoreTweenDuration = 0.6f;
+    [SerializeField] private float comboPulseDuration = 0.3f;
+    [SerializeField] private float achievementDisplayDuration = 2.5f;
+
     private readonly Dictionary<TMP_Text, float> _baseFontSizes = new Dictionary<TMP_Text, float>();
     private readonly Dictionary<TMP_Text, Image> _cardsByText = new Dictionary<TMP_Text, Image>();
     private RectTransform _resolvedRoot;
     private Image _unifiedCardImage;
+    private Image _leftHudPanel;
+    private Image _rightHudPanel;
+    private Image _tickerHudPanel;
+    private Image _qualityTrackImage;
+
+    // Gamification tracking
+    private int _displayedScore = 0;
+    private int _targetScore = 0;
+    private float _scoreTweenTimer = 0f;
+    private int _lastCombo = 0;
+    private float _comboPulseTimer = 0f;
+    private Queue<string> _achievementQueue = new Queue<string>();
+    private string _currentAchievement = "";
+    private float _achievementDisplayTimer = 0f;
 
     private void Awake()
     {
@@ -107,6 +163,7 @@ public class VRDashboardUIController : MonoBehaviour
     {
         ValidateBindings();
         ResolveRootAndCamera();
+        CleanupSplitHudArtifacts();
         CacheBaseFontSizes();
         ApplyDashboardStyle();
         BuildStatCards();
@@ -139,6 +196,7 @@ public class VRDashboardUIController : MonoBehaviour
     private void LateUpdate()
     {
         ApplyPinnedAnchor();
+        UpdateGameOverlay();
         RefreshCardGeometry();
     }
 
@@ -154,13 +212,14 @@ public class VRDashboardUIController : MonoBehaviour
         string statusValue = string.IsNullOrWhiteSpace(packet.status) ? "WAITING" : packet.status.ToUpperInvariant();
 
         SetText(exerciseText, $"<b><size=122%>{prettyExercise.ToUpperInvariant()} DASHBOARD</size></b>");
-        SetText(phaseText, $"<size=84%><color=#FFFFFFB8>PHASE</color></size>  <b>{phaseValue}</b>");
-        SetText(repsText, $"<size=82%><color=#FFFFFFB8>REPS</color></size>  <b>{packet.repCount}</b>");
-        SetText(angleText, $"<size=82%><color=#FFFFFFB8>CURRENT ANGLE</color></size>  <b>{Mathf.RoundToInt(packet.currentAngle)} deg</b>");
-        SetText(targetText, $"<size=82%><color=#FFFFFFB8>TARGET</color></size>  <b>{Mathf.RoundToInt(packet.pushTarget)} deg</b>");
-        SetText(minText, $"<size=82%><color=#FFFFFFB8>MIN THRESHOLD</color></size>  <b>{Mathf.RoundToInt(packet.minimumThreshold)} deg</b>");
-        SetText(qualityText, $"<size=82%><color=#FFFFFFB8>FORM QUALITY</color></size>  <b><color=#{ColorToHex(GetQualityColor(qualityPercent))}>{Mathf.RoundToInt(qualityPercent)}%</color></b>");
-        SetText(statusText, $"<size=84%><color=#FFFFFFCC>SYSTEM STATUS</color></size>  <b><color=#{ColorToHex(statusColor)}>[ {statusValue} ]</color></b>");
+        SetText(phaseText, $"<size=84%><color=#FFFFFFFF>PHASE</color></size>  <b>{phaseValue}</b>");
+        SetText(repsText, $"<size=82%><color=#FFFFFFFF>REPS</color></size>  <b>{packet.repCount}</b>");
+        SetText(angleText, $"<size=82%><color=#FFFFFFFF>CURRENT ANGLE</color></size>  <b>{Mathf.RoundToInt(packet.currentAngle)} deg</b>");
+        SetText(targetText, $"<size=82%><color=#FFFFFFFF>TARGET</color></size>  <b>{Mathf.RoundToInt(packet.pushTarget)} deg</b>");
+        SetText(minText, $"<size=82%><color=#FFFFFFFF>MIN THRESHOLD</color></size>  <b>{Mathf.RoundToInt(packet.minimumThreshold)} deg</b>");
+        SetText(qualityText, $"<size=82%><color=#FFFFFFFF>FORM QUALITY</color></size>  <b><color=#{ColorToHex(GetQualityColor(qualityPercent))}>{Mathf.RoundToInt(qualityPercent)}%</color></b>");
+        SetText(statusText, $"<size=84%><color=#FFFFFFFF>SYSTEM STATUS</color></size>  <b><color=#{ColorToHex(statusColor)}>[ {statusValue} ]</color></b>");
+
         string feedbackValue = string.IsNullOrWhiteSpace(packet.feedback)
             ? "Awaiting movement feedback..."
             : Truncate(packet.feedback.Trim(), maxFeedbackCharacters);
@@ -172,6 +231,140 @@ public class VRDashboardUIController : MonoBehaviour
 
         UpdateQualityBar(packet.formQuality);
         UpdateStatusCard(statusColor);
+        
+        // Process gamification
+        if (enableGameOverlay)
+        {
+            ProcessGameification(packet);
+        }
+    }
+
+    private void ProcessGameification(DashboardPacket packet)
+    {
+        // Start score tween if score changed
+        if (packet.score != _targetScore)
+        {
+            _targetScore = packet.score;
+            _scoreTweenTimer = 0f;
+        }
+
+        // Trigger combo pulse and queue achievements if combo changed
+        if (packet.combo != _lastCombo)
+        {
+            _lastCombo = packet.combo;
+            _comboPulseTimer = 0f;
+        }
+
+        // Queue new achievements
+        if (packet.achievements != null && packet.achievements.Length > 0)
+        {
+            foreach (string achievement in packet.achievements)
+            {
+                if (!string.IsNullOrEmpty(achievement))
+                {
+                    _achievementQueue.Enqueue(achievement);
+                }
+            }
+        }
+
+        // Debug display
+        if (gameOverlayLevelText != null)
+        {
+            Color rankColor = GetRankColor(packet.rank);
+            SetText(gameOverlayLevelText, $"<color=#{ColorToHex(rankColor)}>{packet.rank}</color> | LVL {packet.level}");
+        }
+    }
+
+    private void UpdateGameOverlay()
+    {
+        if (!enableGameOverlay)
+            return;
+
+        // Update score with tween
+        UpdateScoreTween();
+
+        // Update combo pulse
+        UpdateComboPulse();
+
+        // Update achievement display
+        UpdateAchievementDisplay();
+    }
+
+    private void UpdateScoreTween()
+    {
+        if (gameOverlayScoreText == null)
+            return;
+
+        if (_displayedScore < _targetScore && _scoreTweenTimer < scoreTweenDuration)
+        {
+            _scoreTweenTimer += Time.deltaTime;
+            float t = _scoreTweenTimer / scoreTweenDuration;
+            int nextScore = Mathf.Lerp(_displayedScore, _targetScore, t);
+            _displayedScore = nextScore;
+            SetText(gameOverlayScoreText, $"<b><color=#{ColorToHex(scoreColor)}>{_displayedScore:D6}</color></b>");
+        }
+        else if (_displayedScore != _targetScore)
+        {
+            _displayedScore = _targetScore;
+            SetText(gameOverlayScoreText, $"<b><color=#{ColorToHex(scoreColor)}>{_displayedScore:D6}</color></b>");
+        }
+    }
+
+    private void UpdateComboPulse()
+    {
+        if (gameOverlayComboText == null || _lastCombo <= 0)
+            return;
+
+        if (_comboPulseTimer < comboPulseDuration)
+        {
+            _comboPulseTimer += Time.deltaTime;
+            float t = _comboPulseTimer / comboPulseDuration;
+            float pulse = 1f + Mathf.Sin(t * Mathf.PI) * 0.4f;
+            gameOverlayComboText.rectTransform.localScale = Vector3.one * pulse;
+            SetText(gameOverlayComboText, $"<b><size=140%>×{_lastCombo}</size></b>");
+        }
+        else
+        {
+            gameOverlayComboText.rectTransform.localScale = Vector3.one;
+            SetText(gameOverlayComboText, $"<b><size=120%>×{_lastCombo}</size></b>");
+        }
+    }
+
+    private void UpdateAchievementDisplay()
+    {
+        if (gameOverlayAchievementText == null)
+            return;
+
+        // Show current achievement
+        if (!string.IsNullOrEmpty(_currentAchievement))
+        {
+            _achievementDisplayTimer -= Time.deltaTime;
+            if (_achievementDisplayTimer <= 0f)
+            {
+                _currentAchievement = "";
+                gameOverlayAchievementText.text = "";
+            }
+            else
+            {
+                // Fade out effect
+                float alpha = _achievementDisplayTimer / achievementDisplayDuration;
+                SetText(gameOverlayAchievementText, $"<color=#FFFF99FF><b>⭐ {_currentAchievement}</b></color>");
+            }
+        }
+        else if (_achievementQueue.Count > 0)
+        {
+            // Dequeue next achievement
+            _currentAchievement = _achievementQueue.Dequeue();
+            _achievementDisplayTimer = achievementDisplayDuration;
+        }
+    }
+
+    private Color GetRankColor(string rank)
+    {
+        if (rank == "PLATINUM") return rankPlatinum;
+        if (rank == "GOLD") return rankGold;
+        if (rank == "SILVER") return rankSilver;
+        return rankBronze;
     }
 
     private void UpdateQualityBar(string quality)
@@ -220,7 +413,7 @@ public class VRDashboardUIController : MonoBehaviour
         if (field != null)
         {
             field.richText = true;
-            field.text = value;
+            field.text = ToSupportedText(value);
         }
     }
 
@@ -254,6 +447,12 @@ public class VRDashboardUIController : MonoBehaviour
             dashboardRoot.localScale = Vector3.one * dashboardScale;
         }
 
+        if (panelBackground == null)
+        {
+            // Safe default so the background still works even if not wired in the Inspector.
+            panelBackground = dashboardRoot != null ? dashboardRoot.GetComponent<Image>() : GetComponent<Image>();
+        }
+
         if (panelBackground != null)
         {
             panelBackground.color = panelColor;
@@ -275,6 +474,7 @@ public class VRDashboardUIController : MonoBehaviour
         {
             exerciseText.characterSpacing = 1.8f;
             exerciseText.enableWordWrapping = false;
+            exerciseText.overflowMode = TextOverflowModes.Ellipsis;
         }
 
         if (feedbackText != null)
@@ -626,7 +826,7 @@ public class VRDashboardUIController : MonoBehaviour
         minX -= unifiedCardPadding.x;
         maxX += unifiedCardPadding.x;
         minY -= (unifiedCardPadding.y + unifiedCardExtraBottom);
-        maxY += unifiedCardPadding.y;
+        maxY += (unifiedCardPadding.y + unifiedCardExtraTop);
 
         float width = maxX - minX;
         float height = maxY - minY;
@@ -704,6 +904,508 @@ public class VRDashboardUIController : MonoBehaviour
             return text.Substring(0, Mathf.Max(0, maxChars));
 
         return text.Substring(0, maxChars - 3).TrimEnd() + "...";
+    }
+
+    private void NudgeTextSize(TMP_Text text, float multiplier)
+    {
+        if (text == null)
+            return;
+
+        if (_baseFontSizes.TryGetValue(text, out float baseSize))
+        {
+            text.fontSize = baseSize * textScale * multiplier;
+        }
+    }
+
+    private string GetRankName(float qualityPercent)
+    {
+        if (qualityPercent >= 95f) return "PLATINUM";
+        if (qualityPercent >= 85f) return "GOLD";
+        if (qualityPercent >= 70f) return "SILVER";
+        return "BRONZE";
+    }
+
+    private Color GetRankColor(float qualityPercent)
+    {
+        if (qualityPercent >= 95f) return rankPlatinum;
+        if (qualityPercent >= 85f) return rankGold;
+        if (qualityPercent >= 70f) return rankSilver;
+        return rankBronze;
+    }
+
+    private static string BuildMissionState(string phaseValue, string statusValue)
+    {
+        if (phaseValue.Contains("BASELINE"))
+            return "WARMUP";
+
+        if (statusValue.Contains("PAUSE"))
+            return "PAUSED";
+
+        if (statusValue.Contains("TRACK") || statusValue.Contains("GOOD") || statusValue.Contains("READY"))
+            return "LIVE";
+
+        return statusValue;
+    }
+
+    private static string BuildAsciiBar(float percent, int width)
+    {
+        int safeWidth = Mathf.Max(4, width);
+        int filled = Mathf.Clamp(Mathf.RoundToInt((Mathf.Clamp(percent, 0f, 100f) / 100f) * safeWidth), 0, safeWidth);
+        return "[" + new string('#', filled) + new string('-', safeWidth - filled) + "]";
+    }
+
+    private static string GetBonusTag(float qualityPercent)
+    {
+        if (qualityPercent >= 95f) return "JACKPOT";
+        if (qualityPercent >= 85f) return "BOOST";
+        if (qualityPercent >= 70f) return "BUILD";
+        return "WARMUP";
+    }
+
+    private static string GetObjectiveText(string missionState, string statusValue)
+    {
+        if (missionState == "WARMUP") return "LOCK BASELINE";
+        if (statusValue.Contains("PAUSE")) return "HOLD POSITION";
+        if (statusValue.Contains("GOOD") || statusValue.Contains("TRACK")) return "CHAIN CLEAN REPS";
+        return "HIT GOAL ANGLE";
+    }
+
+    private static string GetTickerText(string feedback, string statusValue)
+    {
+        if (!string.IsNullOrWhiteSpace(feedback))
+            return Truncate(feedback.Trim().ToUpperInvariant(), 48);
+
+        if (!string.IsNullOrWhiteSpace(statusValue))
+            return statusValue;
+
+        return "AWAITING INPUT";
+    }
+
+    private RectTransform _qualityBarContainer;
+
+    private void ApplySplitHudLayout()
+    {
+        if (!useSplitSideLayout || (!useGameHudSkin && !applySideLayoutInAllModes))
+        {
+            SetHudChromeVisible(false);
+            return;
+        }
+
+        RectTransform parent = GetSharedTextParent();
+        if (parent == null)
+            return;
+
+        bool leftHas = AnyHudTextAssigned(exerciseText, phaseText, repsText, qualityText, statusText);
+        bool rightHas = AnyHudTextAssigned(angleText, targetText, minText, calibrationText);
+        bool tickerHas = feedbackText != null;
+
+        if (!leftHas && !rightHas && !tickerHas)
+        {
+            SetHudChromeVisible(false);
+            return;
+        }
+
+        EnsureHudChrome(parent);
+
+        SetPanelState(_leftHudPanel, leftHas, enableHudChrome);
+        SetPanelState(_rightHudPanel, rightHas, enableHudChrome);
+        SetPanelState(_tickerHudPanel, tickerHas, enableHudChrome);
+
+        Vector2 leftViewport = ClampViewport(leftHudViewport);
+        Vector2 rightViewport = ClampViewport(rightHudViewport);
+        Vector2 tickerViewportPos = ClampViewport(tickerViewport);
+
+        float leftMinHeight = EstimateBlockMinHeightPixels(new TMP_Text[] { exerciseText, phaseText, repsText, qualityText, statusText }, includeProgressBar: qualityBarFill != null);
+        float rightMinHeight = EstimateBlockMinHeightPixels(new TMP_Text[] { angleText, targetText, minText, calibrationText }, includeProgressBar: false);
+
+        LayoutHudPanel(_leftHudPanel, parent, leftViewport, leftHudSize, false, leftMinHeight);
+        LayoutHudPanel(_rightHudPanel, parent, rightViewport, rightHudSize, false, rightMinHeight);
+        LayoutHudPanel(_tickerHudPanel, parent, tickerViewportPos, tickerHudSize, true, 0f);
+
+        if (leftHas && _leftHudPanel != null)
+        {
+            PlaceHudTextBlockTopLeft(_leftHudPanel.rectTransform,
+                new TMP_Text[] { exerciseText, phaseText, repsText, qualityText, statusText },
+                xPadding: 16f,
+                topPadding: 16f);
+
+            AttachProgressBarToHud(xPadding: 16f, bottomPadding: 12f, height: 10f);
+        }
+
+        if (rightHas && _rightHudPanel != null)
+        {
+            PlaceHudTextBlockTopLeft(_rightHudPanel.rectTransform,
+                new TMP_Text[] { angleText, targetText, minText, calibrationText },
+                xPadding: 16f,
+                topPadding: 16f);
+        }
+
+        if (tickerHas && _tickerHudPanel != null)
+        {
+            PlaceHudTextCentered(_tickerHudPanel.rectTransform, feedbackText, padding: 14f);
+        }
+    }
+
+    private static Vector2 ClampViewport(Vector2 v)
+    {
+        return new Vector2(Mathf.Clamp01(v.x), Mathf.Clamp01(v.y));
+    }
+
+    private static bool AnyHudTextAssigned(params TMP_Text[] texts)
+    {
+        if (texts == null) return false;
+        for (int i = 0; i < texts.Length; i++)
+        {
+            if (texts[i] != null)
+                return true;
+        }
+        return false;
+    }
+
+    private float EstimateBlockMinHeightPixels(TMP_Text[] texts, bool includeProgressBar)
+    {
+        const float topPadding = 16f;
+        const float bottomPadding = 22f;
+
+        float h = topPadding + bottomPadding;
+        if (texts != null)
+        {
+            for (int i = 0; i < texts.Length; i++)
+            {
+                TMP_Text t = texts[i];
+                if (t == null) continue;
+                h += EstimateLineStepPixels(t);
+            }
+        }
+
+        if (includeProgressBar)
+        {
+            h += 18f;
+        }
+
+        return Mathf.Max(60f, h);
+    }
+
+    private float EstimateLineStepPixels(TMP_Text text)
+    {
+        if (text == null)
+            return Mathf.Max(20f, hudRowSpacingPixels);
+
+        float preferred = text.preferredHeight;
+        if (preferred < 1f)
+        {
+            preferred = Mathf.Max(14f, text.fontSize * 1.22f);
+        }
+
+        return Mathf.Max(preferred, Mathf.Max(20f, hudRowSpacingPixels));
+    }
+
+    private void PlaceHudTextBlockTopLeft(RectTransform panel, TMP_Text[] texts, float xPadding, float topPadding)
+    {
+        if (panel == null || texts == null)
+            return;
+
+        float y = -topPadding;
+        for (int i = 0; i < texts.Length; i++)
+        {
+            TMP_Text text = texts[i];
+            if (text == null) continue;
+
+            RectTransform rt = text.rectTransform;
+            if (rt == null) continue;
+
+            if (rt.parent != panel)
+            {
+                rt.SetParent(panel, false);
+            }
+
+            rt.anchorMin = new Vector2(0f, 1f);
+            rt.anchorMax = new Vector2(1f, 1f);
+            rt.pivot = new Vector2(0f, 1f);
+            rt.anchoredPosition = new Vector2(xPadding, y);
+            rt.sizeDelta = new Vector2(-2f * xPadding, 0f);
+            rt.localRotation = Quaternion.identity;
+
+            text.alignment = TextAlignmentOptions.Left;
+
+            y -= EstimateLineStepPixels(text);
+        }
+    }
+
+    private void PlaceHudTextCentered(RectTransform panel, TMP_Text text, float padding)
+    {
+        if (panel == null || text == null)
+            return;
+
+        RectTransform rt = text.rectTransform;
+        if (rt == null)
+            return;
+
+        if (rt.parent != panel)
+        {
+            rt.SetParent(panel, false);
+        }
+
+        rt.anchorMin = new Vector2(0f, 0f);
+        rt.anchorMax = new Vector2(1f, 1f);
+        rt.pivot = new Vector2(0.5f, 0.5f);
+        rt.anchoredPosition = Vector2.zero;
+        rt.sizeDelta = new Vector2(-2f * padding, -2f * padding);
+        rt.localRotation = Quaternion.identity;
+
+        text.alignment = TextAlignmentOptions.Center;
+    }
+
+    private void EnsureHudChrome(RectTransform parent)
+    {
+        _leftHudPanel = EnsurePanelImage(parent, "HUD_LeftPanel", hudPanelColor);
+        _rightHudPanel = EnsurePanelImage(parent, "HUD_RightPanel", hudPanelColor);
+        _tickerHudPanel = EnsurePanelImage(parent, "HUD_TickerPanel", hudTickerColor);
+    }
+
+    private Image EnsurePanelImage(RectTransform parent, string name, Color color)
+    {
+        Transform existing = parent.Find(name);
+        GameObject obj = existing != null
+            ? existing.gameObject
+            : new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Outline), typeof(Shadow));
+
+        obj.transform.SetParent(parent, false);
+        Image image = obj.GetComponent<Image>();
+        image.color = color;
+        image.raycastTarget = false;
+
+        Outline outline = obj.GetComponent<Outline>();
+        outline.effectColor = hudPanelBorderColor;
+        outline.effectDistance = new Vector2(1f, -1f);
+
+        Shadow shadow = obj.GetComponent<Shadow>();
+        shadow.effectColor = new Color(0f, 0f, 0f, 0.42f);
+        shadow.effectDistance = new Vector2(0f, -3f);
+
+        return image;
+    }
+
+    private static void SetPanelState(Image panel, bool active, bool chromeVisible)
+    {
+        if (panel == null)
+            return;
+
+        panel.gameObject.SetActive(active);
+        panel.enabled = chromeVisible;
+
+        Outline outline = panel.GetComponent<Outline>();
+        if (outline != null) outline.enabled = chromeVisible;
+
+        Shadow shadow = panel.GetComponent<Shadow>();
+        if (shadow != null) shadow.enabled = chromeVisible;
+    }
+
+    private void LayoutHudPanel(Image panel, RectTransform parent, Vector2 viewportTopLeft, Vector2 sizeViewport, bool centerPanel, float minHeightPixels)
+    {
+        if (panel == null || parent == null)
+            return;
+
+        RectTransform rt = panel.rectTransform;
+
+        Vector2 safeSize = new Vector2(Mathf.Clamp(sizeViewport.x, 0.1f, 0.95f), Mathf.Clamp(sizeViewport.y, 0.05f, 0.7f));
+        float targetW = parent.rect.width * safeSize.x;
+        float targetH = parent.rect.height * safeSize.y;
+
+        if (minHeightPixels > 0f)
+        {
+            targetH = Mathf.Max(targetH, minHeightPixels);
+        }
+
+        targetW = Mathf.Clamp(targetW, 40f, parent.rect.width * 0.95f);
+        targetH = Mathf.Clamp(targetH, 40f, parent.rect.height * 0.95f);
+
+        float normW = parent.rect.width > 0f ? (targetW / parent.rect.width) : safeSize.x;
+        float normH = parent.rect.height > 0f ? (targetH / parent.rect.height) : safeSize.y;
+
+        Vector2 clamped = ClampViewport(viewportTopLeft);
+        if (centerPanel)
+        {
+            float x = Mathf.Clamp(clamped.x, normW * 0.5f, 1f - (normW * 0.5f));
+            float y = Mathf.Clamp(clamped.y, normH * 0.5f, 1f - (normH * 0.5f));
+            rt.anchorMin = new Vector2(x, y);
+            rt.anchorMax = new Vector2(x, y);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+        }
+        else
+        {
+            float x = Mathf.Clamp(clamped.x, 0f, 1f - normW);
+            float y = Mathf.Clamp(clamped.y, normH, 1f);
+            rt.anchorMin = new Vector2(x, y);
+            rt.anchorMax = new Vector2(x, y);
+            rt.pivot = new Vector2(0f, 1f);
+        }
+
+        rt.anchoredPosition = Vector2.zero;
+        rt.sizeDelta = new Vector2(targetW, targetH);
+        rt.localScale = Vector3.one;
+    }
+
+    private void SetHudChromeVisible(bool visible)
+    {
+        if (_leftHudPanel != null) _leftHudPanel.gameObject.SetActive(visible);
+        if (_rightHudPanel != null) _rightHudPanel.gameObject.SetActive(visible);
+        if (_tickerHudPanel != null) _tickerHudPanel.gameObject.SetActive(visible);
+        if (_qualityTrackImage != null) _qualityTrackImage.enabled = visible;
+        if (_qualityBarContainer != null) _qualityBarContainer.gameObject.SetActive(visible);
+    }
+
+    private RectTransform GuessQualityBarRoot(RectTransform sharedTextParent)
+    {
+        if (qualityBarRoot != null)
+            return qualityBarRoot;
+
+        if (qualityBarFill == null)
+            return null;
+
+        RectTransform current = qualityBarFill.rectTransform;
+        RectTransform lastSafe = current;
+
+        // Walk up a few levels, but never past the shared text parent (to avoid moving the whole dashboard).
+        for (int i = 0; i < 4; i++)
+        {
+            RectTransform p = lastSafe.parent as RectTransform;
+            if (p == null || p == sharedTextParent)
+                break;
+
+            lastSafe = p;
+        }
+
+        return lastSafe;
+    }
+
+    private void AttachProgressBarToHud(float xPadding, float bottomPadding, float height)
+    {
+        if (qualityBarFill == null || _leftHudPanel == null)
+            return;
+
+        RectTransform leftPanel = _leftHudPanel.rectTransform;
+        RectTransform sharedParent = GetSharedTextParent();
+        RectTransform barRoot = GuessQualityBarRoot(sharedParent);
+        if (barRoot == null)
+            return;
+
+        if (_qualityBarContainer == null)
+        {
+            GameObject container = new GameObject("HUD_ProgressBar", typeof(RectTransform));
+            container.transform.SetParent(leftPanel, false);
+            _qualityBarContainer = container.GetComponent<RectTransform>();
+        }
+
+        _qualityBarContainer.anchorMin = new Vector2(0f, 0f);
+        _qualityBarContainer.anchorMax = new Vector2(1f, 0f);
+        _qualityBarContainer.pivot = new Vector2(0.5f, 0f);
+        _qualityBarContainer.anchoredPosition = new Vector2(0f, bottomPadding);
+        _qualityBarContainer.sizeDelta = new Vector2(-2f * xPadding, height);
+        _qualityBarContainer.localRotation = Quaternion.identity;
+
+        if (barRoot.parent != _qualityBarContainer)
+        {
+            barRoot.SetParent(_qualityBarContainer, false);
+        }
+
+        barRoot.anchorMin = new Vector2(0f, 0f);
+        barRoot.anchorMax = new Vector2(1f, 1f);
+        barRoot.pivot = new Vector2(0.5f, 0.5f);
+        barRoot.anchoredPosition = Vector2.zero;
+        barRoot.sizeDelta = Vector2.zero;
+        barRoot.localRotation = Quaternion.identity;
+
+        if (_qualityTrackImage == null)
+        {
+            GameObject track = new GameObject("HUD_ProgressTrack", typeof(RectTransform), typeof(Image));
+            track.transform.SetParent(_qualityBarContainer, false);
+            _qualityTrackImage = track.GetComponent<Image>();
+            _qualityTrackImage.raycastTarget = false;
+        }
+
+        _qualityTrackImage.color = hudProgressTrackColor;
+        RectTransform trackRect = _qualityTrackImage.rectTransform;
+        trackRect.anchorMin = new Vector2(0f, 0f);
+        trackRect.anchorMax = new Vector2(1f, 1f);
+        trackRect.pivot = new Vector2(0.5f, 0.5f);
+        trackRect.anchoredPosition = Vector2.zero;
+        trackRect.sizeDelta = Vector2.zero;
+        trackRect.localRotation = Quaternion.identity;
+
+        // Put the track behind the bar root.
+        trackRect.SetSiblingIndex(0);
+    }
+
+    private static string ToSupportedText(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return value;
+
+        char[] chars = value.ToCharArray();
+        for (int i = 0; i < chars.Length; i++)
+        {
+            if (chars[i] > 127)
+            {
+                chars[i] = '?';
+            }
+        }
+
+        return new string(chars);
+    }
+
+    private void CleanupSplitHudArtifacts()
+    {
+        // If previous experiments created HUD panel objects and re-parented text into them,
+        // put everything back under the original shared parent and hide the HUD objects.
+        RectTransform parent = GetSharedTextParent();
+        if (parent == null)
+            return;
+
+        string[] hudNames =
+        {
+            "HUD_LeftPanel",
+            "HUD_RightPanel",
+            "HUD_TickerPanel",
+            "HUD_ProgressBar",
+            "HUD_ProgressTrack"
+        };
+
+        for (int i = 0; i < hudNames.Length; i++)
+        {
+            Transform t = parent.Find(hudNames[i]);
+            if (t != null)
+            {
+                t.gameObject.SetActive(false);
+            }
+        }
+
+        TMP_Text[] texts =
+        {
+            exerciseText,
+            phaseText,
+            repsText,
+            angleText,
+            targetText,
+            minText,
+            qualityText,
+            statusText,
+            feedbackText,
+            calibrationText
+        };
+
+        for (int i = 0; i < texts.Length; i++)
+        {
+            TMP_Text t = texts[i];
+            if (t == null || t.rectTransform == null)
+                continue;
+
+            if (t.rectTransform.parent != parent)
+            {
+                t.rectTransform.SetParent(parent, false);
+            }
+        }
+
     }
 
     private void UpdateStatusCard(Color statusColor)
