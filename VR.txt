@@ -1,0 +1,17 @@
+Verify VR connected to PC: & "C:\Program Files\Unity\Hub\Editor\6000.2.7f2\Editor\Data\PlaybackEngines\AndroidPlayer\SDK\platform-tools\adb.exe" devices
+Build VR App: & "C:\Program Files\Unity\Hub\Editor\6000.2.7f2\Editor\Data\PlaybackEngines\AndroidPlayer\SDK\platform-tools\adb.exe" install Pose2Play_VR_v0.1.0.apk
+For replacing an existing version: & "C:\Program Files\Unity\Hub\Editor\6000.2.7f2\Editor\Data\PlaybackEngines\AndroidPlayer\SDK\platform-tools\adb.exe" install -r Pose2Play_VR_v0.1.0.apk
+
+Builds folder path: D:\University\FYP\VR\VR_Test_URP\Pose2Play\VR_Builds
+
+ IPv4 Address. . . . . . . . . . . : 192.168.18.30
+
+
+
+
+ & "D:\University\FYP\Pose2Play_BaseModel\.venv\Scripts\python.exe" "D:\University\FYP\Pose2Play_BaseModel\ml\api_server.py"
+
+ Play Mode: START_PHASE7.ps1
+ Quest Mode: START_PHASE7.ps1 -Mode Quest
+ Local: START_PHASE7.ps1 -Mode Local
+ 

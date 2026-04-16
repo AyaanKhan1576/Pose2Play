@@ -15,7 +15,10 @@ public class UDPReceiver : MonoBehaviour
     public string desktopBackendIp = "192.168.18.30";
 
     [Tooltip("If enabled, only packets from Desktop Backend IP are accepted.")]
-    public bool onlyAcceptDesktopIp = true;
+    public bool onlyAcceptDesktopIp = false;
+
+    [Tooltip("If filtering is enabled and Desktop Backend IP is empty or stale, auto-learn sender IP from first valid packet.")]
+    public bool autoLearnDesktopIp = true;
 
     private UdpClient client;
     private Thread receiveThread;
@@ -23,6 +26,7 @@ public class UDPReceiver : MonoBehaviour
     private string latestMessage = "";
     private volatile bool newData = false;
     private long _lastPacketReceivedUtcTicks;
+    private bool _loggedLearnedIp;
 
     public string LastSenderIp { get; private set; } = "None";
     public float SecondsSinceLastPacket
@@ -74,6 +78,16 @@ public class UDPReceiver : MonoBehaviour
             {
                 byte[] data = client.Receive(ref ep);
                 string senderIp = ep.Address?.ToString() ?? "Unknown";
+
+                if (onlyAcceptDesktopIp && autoLearnDesktopIp && ShouldAutoLearnSenderIp())
+                {
+                    desktopBackendIp = senderIp;
+                    if (!_loggedLearnedIp)
+                    {
+                        _loggedLearnedIp = true;
+                        Debug.Log($"[UDPReceiver] Auto-learned Desktop Backend IP: {desktopBackendIp}");
+                    }
+                }
 
                 if (onlyAcceptDesktopIp && !IsAllowedSenderIp(senderIp))
                 {
@@ -152,5 +166,16 @@ public class UDPReceiver : MonoBehaviour
 #endif
 
         return false;
+    }
+
+    private bool ShouldAutoLearnSenderIp()
+    {
+        if (string.IsNullOrWhiteSpace(desktopBackendIp))
+        {
+            return true;
+        }
+
+        string normalized = desktopBackendIp.Trim();
+        return normalized == "192.168.18.30";
     }
 }

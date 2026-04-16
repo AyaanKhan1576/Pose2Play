@@ -46,7 +46,10 @@ public class VRDashboardReceiver : MonoBehaviour
     [SerializeField] private string desktopBackendIp = "192.168.18.30";
 
     [Tooltip("If enabled, only packets from Desktop Backend IP are accepted.")]
-    [SerializeField] private bool onlyAcceptDesktopIp = true;
+    [SerializeField] private bool onlyAcceptDesktopIp = false;
+
+    [Tooltip("If filtering is enabled and Desktop Backend IP is empty or stale, auto-learn sender IP from first valid packet.")]
+    [SerializeField] private bool autoLearnDesktopIp = true;
 
     private UdpClient _udpClient;
     private Thread _receiveThread;
@@ -56,6 +59,7 @@ public class VRDashboardReceiver : MonoBehaviour
     private DashboardPacket _latestPacket;
     private bool _hasNewPacket;
     private long _lastPacketReceivedUtcTicks;
+    private bool _loggedLearnedIp;
 
     public string LastSenderIp { get; private set; } = "None";
     public float SecondsSinceLastPacket
@@ -156,6 +160,16 @@ public class VRDashboardReceiver : MonoBehaviour
                 byte[] bytes = _udpClient.Receive(ref endPoint);
                 string senderIp = endPoint.Address?.ToString() ?? "Unknown";
 
+                if (onlyAcceptDesktopIp && autoLearnDesktopIp && ShouldAutoLearnSenderIp())
+                {
+                    desktopBackendIp = senderIp;
+                    if (!_loggedLearnedIp)
+                    {
+                        _loggedLearnedIp = true;
+                        Debug.Log($"[VRDashboardReceiver] Auto-learned Desktop Backend IP: {desktopBackendIp}");
+                    }
+                }
+
                 if (onlyAcceptDesktopIp && !IsAllowedSenderIp(senderIp))
                 {
                     continue;
@@ -225,5 +239,16 @@ public class VRDashboardReceiver : MonoBehaviour
 #endif
 
         return false;
+    }
+
+    private bool ShouldAutoLearnSenderIp()
+    {
+        if (string.IsNullOrWhiteSpace(desktopBackendIp))
+        {
+            return true;
+        }
+
+        string normalized = desktopBackendIp.Trim();
+        return normalized == "192.168.18.30";
     }
 }
