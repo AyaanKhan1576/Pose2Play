@@ -146,6 +146,9 @@ public class SkeletonOverlay : MonoBehaviour
     [Tooltip("Make the avatar material itself glow in engaged anatomical regions.")]
     public bool useBodyMaterialGlow = true;
 
+    [Tooltip("If body glow shader is unavailable on device, automatically enable a visible fallback overlay.")]
+    public bool autoFallbackOverlayIfGlowUnavailable = true;
+
     [Tooltip("Emergency kill switch: keep original avatar material and disable all tint overlays.")]
     public bool disableAllTintOverlays = false;
 
@@ -551,13 +554,28 @@ public class SkeletonOverlay : MonoBehaviour
         }
 
         if (targetBodyRenderer == null)
+        {
+            if (autoFallbackOverlayIfGlowUnavailable)
+            {
+                useBodyMaterialGlow = false;
+                showMeshOverlay = true;
+                showLineOverlay = true;
+                Debug.LogWarning("[SkeletonOverlay] Body renderer not found. Falling back to mesh/line overlay for VR visibility.");
+            }
             return;
+        }
 
         Shader shader = Shader.Find("Pose2Play/MuscleZoneShell");
         if (shader == null || !shader.isSupported)
         {
             Debug.LogWarning("[SkeletonOverlay] Shader Pose2Play/MuscleZoneShell missing/unsupported. Body glow disabled.");
             useBodyMaterialGlow = false;
+            if (autoFallbackOverlayIfGlowUnavailable)
+            {
+                showMeshOverlay = true;
+                showLineOverlay = true;
+                Debug.LogWarning("[SkeletonOverlay] Enabled fallback mesh/line overlay because glow shader is unavailable.");
+            }
             return;
         }
 

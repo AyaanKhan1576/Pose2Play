@@ -2,9 +2,12 @@ from flask import Flask, request, jsonify, send_from_directory, send_file
 from flask_cors import CORS
 from flask_socketio import SocketIO
 from stable_baselines3 import DQN
+import argparse
+import atexit
 import numpy as np
 import os
 from pathlib import Path
+import signal
 import sys
 import torch
 import socket as udp_socket
@@ -17,10 +20,35 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from form_feedback import FormFeedbackGenerator
 from models.lstm_quality import ShoulderLSTM
 from personalization import RehabPersonalizer
+from session_logger import SessionLogger
 
 # Get paths
 ml_dir = Path(__file__).parent
 demo_dir = ml_dir.parent / 'demo'
+
+
+def _load_local_env_file() -> None:
+    """Load a repo-root .env file without overriding existing environment values."""
+    env_path = ml_dir.parent / '.env'
+    if not env_path.exists():
+        return
+
+    try:
+        for raw_line in env_path.read_text(encoding='utf-8').splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith('#') or '=' not in line:
+                continue
+
+            key, value = line.split('=', 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+    except Exception:
+        pass
+
+
+_load_local_env_file()
 
 # Create Flask app with static files from demo directory
 app = Flask(__name__, 
@@ -65,6 +93,8 @@ LANDMARK_MAP = {
     "left_heel": 29,     "right_heel": 30,
     "left_foot": 31,     "right_foot": 32,
 }
+
+session_logger = None
 
 @socketio.on('pose_data')
 def handle_pose_data(landmarks):
@@ -248,15 +278,33 @@ else:
     print(f"⚠️ LSTM model not found: {lstm_model_path}")
     print("   Train the model first with: python train_lstm.py")
 
+session_logger = SessionLogger(
+    default_resume_latest=os.getenv('POSE2PLAY_RESUME_LATEST', '0') == '1',
+    app_version=os.getenv('POSE2PLAY_APP_VERSION', '0.1.0'),
+    model_version=os.path.basename(lstm_model_path) if lstm_model else None,
+)
+
+
+def _request_payload():
+    payload = request.get_json(silent=True)
+    return payload if isinstance(payload, dict) else {}
+
+
+def _response_payload(value):
+    return json.loads(json.dumps(value, default=str))
+
+
 @app.route('/')
 def serve_demo():
     """Serve the main demo page"""
     return send_from_directory(str(demo_dir), 'index.html')
 
+
 @app.route('/<path:path>')
 def serve_static(path):
     """Serve static files from demo directory"""
     return send_from_directory(str(demo_dir), path)
+
 
 @app.route('/health', methods=['GET'])
 def health():
@@ -266,6 +314,9 @@ def health():
         'form_classifier_loaded': form_classifier is not None,
         'lstm_model_loaded': lstm_model is not None,
         'personalizer_loaded': personalizer is not None,
+        'firebase_enabled': session_logger.is_enabled() if session_logger else False,
+        'session_logging_enabled': session_logger.is_enabled() if session_logger else False,
+        'active_session_id': session_logger.current_session_id if session_logger else None,
         'models': {
             'rl': 'DQN_rehab_final.zip' if model else None,
             'lstm': 'shoulder_lstm_model.pt' if lstm_model else None,
@@ -273,6 +324,145 @@ def health():
         }
     })
 
+
+@app.route('/session/start', methods=['POST'])
+def start_session():
+    payload = _request_payload()
+    exercise_type = payload.get('exerciseType') or payload.get('exercise') or 'unknown'
+    metadata = payload.get('metadata') if isinstance(payload.get('metadata'), dict) else {}
+    if payload.get('appVersion'):
+        metadata['appVersion'] = payload.get('appVersion')
+    if payload.get('modelVersion'):
+        metadata['modelVersion'] = payload.get('modelVersion')
+
+    session_id = payload.get('sessionId')
+    resume_latest = payload.get('resumeLatest')
+
+    try:
+        if session_logger.current_session_id and session_logger.status == 'active':
+            session = session_logger.get_current_session()
+        elif session_id:
+            session = session_logger.resume_session(session_id, exercise_type=exercise_type, metadata=metadata)
+        elif resume_latest is True or (resume_latest is None and session_logger.default_resume_latest):
+            latest = session_logger.get_latest_resumable_session()
+            if latest:
+                session = session_logger.resume_session(latest['sessionId'], exercise_type=exercise_type, metadata=metadata)
+            else:
+                session = session_logger.start_new_session(exercise_type, metadata)
+        else:
+            session = session_logger.start_new_session(exercise_type, metadata)
+
+        return jsonify(_response_payload({
+            'ok': True,
+            'session': session,
+            'restoredReps': session_logger.get_current_reps(),
+            'firebaseEnabled': session_logger.is_enabled(),
+            'resumed': bool(session_id or resume_latest or session_logger.default_resume_latest),
+        }))
+    except Exception as exc:
+        session_logger.fail_session(str(exc))
+        return jsonify({'ok': False, 'error': str(exc)}), 500
+
+
+@app.route('/session/rep', methods=['POST'])
+def log_session_rep():
+    payload = _request_payload()
+    rep_data = payload.get('repData') if isinstance(payload.get('repData'), dict) else {}
+    if not rep_data:
+        rep_data = payload.get('rep') if isinstance(payload.get('rep'), dict) else {}
+    if not rep_data:
+        rep_data = {key: value for key, value in payload.items() if key not in {'metadata', 'feedbackEvent'}}
+
+    exercise_type = payload.get('exerciseType') or rep_data.get('exerciseType') or session_logger.exercise_type or 'unknown'
+    rep_data.setdefault('exerciseType', exercise_type)
+    if payload.get('phase') and not rep_data.get('exercisePhase'):
+        rep_data['exercisePhase'] = payload.get('phase')
+    if payload.get('qualityScore') is not None and rep_data.get('qualityScore') is None:
+        rep_data['qualityScore'] = payload.get('qualityScore')
+    if payload.get('feedbackLabels') is not None and not rep_data.get('feedbackLabels'):
+        rep_data['feedbackLabels'] = payload.get('feedbackLabels')
+    if payload.get('mistakeFlags') is not None and not rep_data.get('mistakeFlags'):
+        rep_data['mistakeFlags'] = payload.get('mistakeFlags')
+    if payload.get('rlStateFeatures') is not None and rep_data.get('rlStateFeatures') is None:
+        rep_data['rlStateFeatures'] = payload.get('rlStateFeatures')
+    if payload.get('rlActionOrRecommendation') is not None and rep_data.get('rlActionOrRecommendation') is None:
+        rep_data['rlActionOrRecommendation'] = payload.get('rlActionOrRecommendation')
+    if payload.get('rewardSignal') is not None and rep_data.get('rewardSignal') is None:
+        rep_data['rewardSignal'] = payload.get('rewardSignal')
+    if payload.get('notes') is not None and rep_data.get('notes') is None:
+        rep_data['notes'] = payload.get('notes')
+
+    try:
+        rep = session_logger.log_rep(rep_data)
+        feedback_event = payload.get('feedbackEvent')
+        if isinstance(feedback_event, dict):
+            session_logger.log_feedback_event(feedback_event)
+        return jsonify(_response_payload({
+            'ok': True,
+            'rep': rep,
+            'session': session_logger.get_current_session(),
+            'firebaseEnabled': session_logger.is_enabled(),
+        }))
+    except Exception as exc:
+        session_logger.fail_session(str(exc))
+        return jsonify({'ok': False, 'error': str(exc)}), 500
+
+
+@app.route('/session/feedback', methods=['POST'])
+def log_session_feedback():
+    payload = _request_payload()
+    try:
+        event = payload.get('eventData') if isinstance(payload.get('eventData'), dict) else payload
+        logged = session_logger.log_feedback_event(event)
+        return jsonify(_response_payload({'ok': True, 'event': logged, 'firebaseEnabled': session_logger.is_enabled()}))
+    except Exception as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 500
+
+
+@app.route('/session/pause', methods=['POST'])
+def pause_session():
+    payload = _request_payload()
+    try:
+        snapshot = payload.get('snapshotData') if isinstance(payload.get('snapshotData'), dict) else None
+        paused = session_logger.pause_session(snapshot)
+        return jsonify(_response_payload({'ok': True, 'session': paused, 'firebaseEnabled': session_logger.is_enabled()}))
+    except Exception as exc:
+        session_logger.fail_session(str(exc))
+        return jsonify({'ok': False, 'error': str(exc)}), 500
+
+
+@app.route('/session/end', methods=['POST'])
+def end_session():
+    payload = _request_payload()
+    try:
+        summary = payload.get('summaryData') if isinstance(payload.get('summaryData'), dict) else None
+        ended = session_logger.end_session(summary)
+        return jsonify(_response_payload({'ok': True, 'session': ended, 'firebaseEnabled': session_logger.is_enabled()}))
+    except Exception as exc:
+        session_logger.fail_session(str(exc))
+        return jsonify({'ok': False, 'error': str(exc)}), 500
+
+
+@app.route('/session/fail', methods=['POST'])
+def fail_session():
+    payload = _request_payload()
+    error_message = payload.get('errorMessage') or payload.get('message') or 'Session failed'
+    try:
+        failed = session_logger.fail_session(error_message)
+        return jsonify(_response_payload({'ok': True, 'session': failed, 'firebaseEnabled': session_logger.is_enabled()}))
+    except Exception as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 500
+
+
+@app.route('/session/latest-resumable', methods=['GET'])
+def latest_resumable_session():
+    latest = session_logger.get_latest_resumable_session() if session_logger else None
+    return jsonify({
+        'ok': True,
+        'session': latest,
+        'firebaseEnabled': session_logger.is_enabled() if session_logger else False,
+    })
+ 
 @app.route('/predict', methods=['POST'])
 def predict():
     try:
@@ -635,7 +825,37 @@ def generate_tts():
         return jsonify({'error': str(e)}), 500
 
 
+def _pause_session_on_shutdown(reason: str = 'shutdown'):
+    if session_logger and session_logger.current_session_id:
+        try:
+            session_logger.pause_session({'shutdownReason': reason})
+        except Exception:
+            pass
+
+
+def _handle_shutdown_signal(reason: str):
+    _pause_session_on_shutdown(reason)
+    raise SystemExit(0)
+
+
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(add_help=True)
+    parser.add_argument('--resume-latest', action='store_true', help='Resume the latest paused or active session on launch')
+    parser.add_argument('--new-session', action='store_true', help='Force a fresh session even if a resumable session exists')
+    args = parser.parse_args()
+
+    if args.new_session:
+        session_logger.default_resume_latest = False
+    else:
+        session_logger.default_resume_latest = args.resume_latest or session_logger.default_resume_latest
+
+    atexit.register(_pause_session_on_shutdown, 'process_exit')
+    try:
+        signal.signal(signal.SIGINT, lambda signum, frame: _handle_shutdown_signal('sigint'))
+        signal.signal(signal.SIGTERM, lambda signum, frame: _handle_shutdown_signal('sigterm'))
+    except Exception:
+        pass
+
     print("="*60)
     print("🚀 Pose2Play - All-in-One Server")
     print("="*60)
@@ -644,6 +864,7 @@ if __name__ == '__main__':
     print(f"  ✅ Form Classifier:         {form_classifier is not None}")
     print(f"  ✅ LSTM Quality Model:      {lstm_model is not None}")
     print(f"  ✅ Personalizer:            {personalizer is not None}")
+    print(f"  ✅ Firebase Logging:        {session_logger.is_enabled() if session_logger else False}")
     print("\nNetwork Configuration:")
     targets_str = ", ".join([f"{ip}:{UNITY_POSE_UDP_PORT}" for ip in UNITY_UDP_TARGETS])
     print(f"  📡 UDP Pose Target(s):      {targets_str}")
@@ -654,8 +875,13 @@ if __name__ == '__main__':
     server_port = int(os.getenv('POSE2PLAY_SERVER_PORT', '5000'))
     browser_host = 'localhost' if server_host == '0.0.0.0' else server_host
 
+    latest_session = session_logger.get_latest_resumable_session() if session_logger else None
     print("\n" + "="*60)
     print(f"🌐 Open in browser: http://{browser_host}:{server_port}")
     print("📷 Make sure to ALLOW camera access!")
+    if session_logger and session_logger.default_resume_latest:
+        print(f"🔁 Resume mode: enabled{' | latest resumable session found' if latest_session else ''}")
+    else:
+        print("🆕 Resume mode: start new session by default")
     print("="*60 + "\n")
     socketio.run(app, host=server_host, port=server_port, debug=False)

@@ -100,6 +100,12 @@ After downloading, extract and place the `Dataset/` folder in the parent directo
     └── ml/
 ```
 
+### Firebase Firestore Logging (Optional)
+
+Pose2Play can log compact session and rep summaries to Firebase Firestore from the Python backend. This is disabled by default and the app still runs normally without Firebase.
+
+Setup details are in [FIREBASE_SETUP.md](FIREBASE_SETUP.md).
+
 ### Running the System
 
 #### Option 1: Quick Start (Recommended)

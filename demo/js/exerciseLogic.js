@@ -298,6 +298,20 @@ export class ExerciseManager {
         this.currentRepAngleSequence = [];
     }
 
+    restoreSessionState(state = {}) {
+        this.currentExercise = state.currentExercise || this.currentExercise;
+        this.repCount = Number(state.repCount || 0);
+        this.currentState = state.currentState || 'STANDING';
+        this.sessionAngles = Array.isArray(state.sessionAngles) ? [...state.sessionAngles] : [];
+        this.sessionReps = Array.isArray(state.sessionReps) ? [...state.sessionReps] : [];
+        this.personalTarget = state.personalTarget ?? this.personalTarget;
+        this.minimumThreshold = state.minimumThreshold ?? this.minimumThreshold;
+        this.userBaseline = state.userBaseline ?? this.userBaseline;
+        this.currentPhase = state.currentPhase || 'TRAINING';
+        this.baselineReps = Array.isArray(state.baselineReps) ? [...state.baselineReps] : [];
+        this.currentRepAngleSequence = [];
+    }
+
     changeExercise(exercise) {
         this.currentExercise = exercise;
         this.reset();
