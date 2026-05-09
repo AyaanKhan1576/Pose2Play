@@ -197,7 +197,7 @@ class FirebaseDB:
             print(f"⚠️ Firestore read failed for session {session_id}: {exc}")
             return None
 
-    def get_latest_resumable_session(self) -> Optional[Dict[str, Any]]:
+    def get_latest_resumable_session(self, exercise_type: Optional[str] = None) -> Optional[Dict[str, Any]]:
         if not self.is_enabled():
             return None
 
@@ -207,6 +207,8 @@ class FirebaseDB:
                 payload = snapshot.to_dict() or {}
                 status = payload.get("status")
                 if status not in {"paused", "active"}:
+                    continue
+                if exercise_type and str(payload.get("exerciseType") or "").lower() != str(exercise_type).lower():
                     continue
                 payload["sessionId"] = snapshot.id
                 candidates.append(payload)

@@ -509,8 +509,8 @@ class SessionLogger:
         self.firebase_db.update_session_document(self.current_session_id, payload)
         return deepcopy(payload)
 
-    def get_latest_resumable_session(self) -> Optional[Dict[str, Any]]:
-        return self.firebase_db.get_latest_resumable_session()
+    def get_latest_resumable_session(self, exercise_type: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        return self.firebase_db.get_latest_resumable_session(exercise_type=exercise_type)
 
     def get_current_session(self) -> Optional[Dict[str, Any]]:
         return deepcopy(self.current_session) if self.current_session else None

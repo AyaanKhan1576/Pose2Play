@@ -456,11 +456,13 @@ def fail_session():
 
 @app.route('/session/latest-resumable', methods=['GET'])
 def latest_resumable_session():
-    latest = session_logger.get_latest_resumable_session() if session_logger else None
+    exercise_type = request.args.get('exerciseType') or request.args.get('exercise')
+    latest = session_logger.get_latest_resumable_session(exercise_type=exercise_type) if session_logger else None
     return jsonify({
         'ok': True,
         'session': latest,
         'firebaseEnabled': session_logger.is_enabled() if session_logger else False,
+        'exerciseType': exercise_type,
     })
  
 @app.route('/predict', methods=['POST'])

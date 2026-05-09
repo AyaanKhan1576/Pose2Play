@@ -929,7 +929,7 @@
             const resumeBtn = document.getElementById('resumeBtn');
 
             try {
-                const response = await fetch('/session/latest-resumable');
+                const response = await fetch(`/session/latest-resumable?exerciseType=${encodeURIComponent(currentExercise)}`);
                 const data = response.ok ? await response.json() : null;
                 latestResumableSession = data?.session || null;
 
@@ -1580,6 +1580,8 @@
             currentExercise = document.getElementById('exerciseSelect').value;
             exerciseManager.changeExercise(currentExercise);
             window.resetExercise();
+            latestResumableSession = null;
+            refreshResumableSessionStatus();
             emitDashboardUpdate({
                 exercise: currentExercise,
                 status: `Exercise selected: ${currentExercise}`,
