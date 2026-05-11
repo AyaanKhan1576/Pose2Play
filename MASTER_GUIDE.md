@@ -2627,7 +2627,8 @@ Browser (MediaPipe) → WebSocket → Flask api_server.py → UDP:5055 → Unity
 ```powershell
 # 1. Press Play in Unity
 # 2. Start the Flask server:
-& "D:/university/fyp/milestones/mid eval/Pose2Play_BaseModel/.venv/Scripts/python.exe" "D:/university/fyp/milestones/mid eval/Pose2Play_BaseModel/ml/api_server.py"
+ Set-Location "D:\university\fyp\milestones\mid eval\Pose2Play_BaseModel\ml"; $env:POSE2PLAY_SERVER_HOST = "127.0.0.1"; $env:POSE2PLAY_SERVER_PORT = "5000"; & "D:/university/fyp/milestones/mid eval/Pose2Play_BaseModel/.venv/Scripts/python.exe" "api_server.py"
+
 # 3. Open http://localhost:5000 and start detection
 ```
 

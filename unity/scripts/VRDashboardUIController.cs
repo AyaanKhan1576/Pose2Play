@@ -13,10 +13,28 @@ public class VRDashboardUIController : MonoBehaviour
     [SerializeField] private RectTransform dashboardRoot;
     [Tooltip("Overall dashboard scale multiplier.")]
     [Range(0.8f, 2.5f)]
-    [SerializeField] private float dashboardScale = 1.25f;
+    [SerializeField] private float dashboardScale = 1.0f;
     [Tooltip("Scales all TMP font sizes for a larger, easier-to-read panel.")]
     [Range(0.8f, 2.2f)]
-    [SerializeField] private float textScale = 1.0f;
+    [SerializeField] private float textScale = 1.22f;
+    [Tooltip("Automatically shrinks text per-field if a large text scale would clip the HUD.")]
+    [SerializeField] private bool adaptiveTextAutosize = true;
+    [Tooltip("Minimum autosize font as a multiplier of each text's original size.")]
+    [Range(0.4f, 0.95f)]
+    [SerializeField] private float autosizeMinMultiplier = 0.62f;
+    [Tooltip("Arranges the dashboard as a compact top-of-screen HUD instead of a tall center panel.")]
+    [SerializeField] private bool compactTopHudLayout = true;
+    [Tooltip("Padding used when positioning the top HUD inside the shared text container.")]
+    [SerializeField] private Vector2 topHudPadding = new Vector2(28f, 18f);
+    [Tooltip("Spacing between compact HUD rows.")]
+    [Range(4f, 36f)]
+    [SerializeField] private float topHudRowGap = 10f;
+    [Tooltip("Spacing between compact HUD chips.")]
+    [Range(4f, 28f)]
+    [SerializeField] private float topHudChipGap = 12f;
+    [Tooltip("Extra horizontal spacing multiplier for left-side telemetry rows.")]
+    [Range(1.0f, 2.0f)]
+    [SerializeField] private float leftSectionSpacingMultiplier = 1.15f;
 
     [Header("HUD Anchor")]
     [Tooltip("Pins this dashboard to a stable viewport position like the on-screen legend.")]
@@ -24,10 +42,10 @@ public class VRDashboardUIController : MonoBehaviour
     [Tooltip("Optional camera override. If empty, Camera.main is used.")]
     [SerializeField] private Camera anchorCamera;
     [Tooltip("Viewport anchor position (0,0 bottom-left to 1,1 top-right).")]
-    [SerializeField] private Vector2 viewportAnchor = new Vector2(0.24f, 0.56f);
+    [SerializeField] private Vector2 viewportAnchor = new Vector2(0.70f, 0.90f);
     [Tooltip("Distance from camera while pinned in viewport mode.")]
     [Range(0.5f, 5f)]
-    [SerializeField] private float cameraDistance = 1.45f;
+    [SerializeField] private float cameraDistance = 1.20f;
     [Tooltip("Keeps panel upright by using camera yaw only (no roll/pitch tilt).")]
     [SerializeField] private bool yawOnlyFacing = true;
     [Tooltip("How quickly the panel settles into anchor pose.")]
@@ -39,14 +57,24 @@ public class VRDashboardUIController : MonoBehaviour
     [Header("Theme")]
     [Tooltip("Optional background image of the dashboard panel.")]
     [SerializeField] private Image panelBackground;
-    [SerializeField] private Color panelColor = new Color(0f, 0f, 0f, 0.46f);
+    [SerializeField] private Color panelColor = new Color(0.03f, 0.07f, 0.14f, 0.62f);
     [SerializeField] private Color titleColor = new Color(1f, 1f, 1f, 0.96f);
-    [SerializeField] private Color bodyColor = new Color(0.93f, 0.96f, 1f, 0.92f);
-    [SerializeField] private Color mutedColor = new Color(0.78f, 0.84f, 0.92f, 0.92f);
-    [SerializeField] private Color accentColor = new Color(0.29f, 0.94f, 0.56f, 0.98f);
+    [SerializeField] private Color scoreColor = new Color(0.90f, 0.95f, 1f, 0.98f);
+    [SerializeField] private Color levelColor = new Color(0.90f, 0.98f, 0.88f, 0.98f);
+    [SerializeField] private Color comboColor = new Color(1f, 0.92f, 0.72f, 0.98f);
+    [SerializeField] private Color rankColor = new Color(1f, 0.84f, 0.48f, 0.98f);
+    [SerializeField] private Color achievementColor = new Color(0.86f, 0.92f, 1f, 0.90f);
+    [SerializeField] private Color bodyColor = new Color(0.88f, 0.96f, 1f, 0.98f);
+    [SerializeField] private Color mutedColor = new Color(0.74f, 0.86f, 0.98f, 0.92f);
+    [SerializeField] private Color accentColor = new Color(0.24f, 0.96f, 0.84f, 0.99f);
 
     [Header("Text")]
     [SerializeField] private TMP_Text exerciseText;
+    [SerializeField] private TMP_Text scoreText;
+    [SerializeField] private TMP_Text levelText;
+    [SerializeField] private TMP_Text comboText;
+    [SerializeField] private TMP_Text rankText;
+    [SerializeField] private TMP_Text achievementsText;
     [SerializeField] private TMP_Text phaseText;
     [SerializeField] private TMP_Text repsText;
     [SerializeField] private TMP_Text angleText;
@@ -59,11 +87,30 @@ public class VRDashboardUIController : MonoBehaviour
 
     [Header("Visual")]
     [SerializeField] private Image qualityBarFill;
-    [Tooltip("Optional: assign the RectTransform that represents the whole quality bar (track + fill). If left empty, the script will try to move a safe parent of qualityBarFill.")]
-    [SerializeField] private RectTransform qualityBarRoot;
+    [Tooltip("Optional quality bar background image (recommended: parent of fill).")]
+    [SerializeField] private Image qualityBarBackground;
     [SerializeField] private Color qualityGood = new Color(0.30f, 0.72f, 0.47f);
     [SerializeField] private Color qualityWarn = new Color(0.95f, 0.60f, 0.14f);
     [SerializeField] private Color qualityBad = new Color(0.91f, 0.30f, 0.30f);
+    [Tooltip("Scales quality bar width relative to available space.")]
+    [Range(0.45f, 1.0f)]
+    [SerializeField] private float qualityBarWidthRatio = 0.68f;
+
+    [Header("Gamification HUD")]
+    [Tooltip("Places score, level, combo, rank into a dedicated right-side column.")]
+    [SerializeField] private bool useGamificationColumn = true;
+    [Tooltip("Creates highlighted chip backgrounds behind gamification texts.")]
+    [SerializeField] private bool enableGamificationChips = true;
+    [SerializeField] private Color gamificationColumnColor = new Color(0.08f, 0.13f, 0.22f, 0.72f);
+    [SerializeField] private Color scoreChipColor = new Color(0.10f, 0.22f, 0.35f, 0.86f);
+    [SerializeField] private Color levelChipColor = new Color(0.13f, 0.28f, 0.18f, 0.86f);
+    [SerializeField] private Color comboChipColor = new Color(0.35f, 0.25f, 0.10f, 0.86f);
+    [SerializeField] private Color rankChipColor = new Color(0.37f, 0.27f, 0.09f, 0.88f);
+    [SerializeField] private Color achievementsChipColor = new Color(0.12f, 0.20f, 0.31f, 0.74f);
+    [SerializeField] private Vector2 gamificationChipPadding = new Vector2(12f, 8f);
+    [SerializeField] private Vector2 gamificationColumnPadding = new Vector2(14f, 12f);
+    [Tooltip("Moves only the gamification column (X left/right, Y up/down) without affecting the left telemetry block.")]
+    [SerializeField] private Vector2 gamificationColumnOffset = Vector2.zero;
 
     [Header("Cards")]
     [Tooltip("Creates a semi-transparent card image behind each key stat text at runtime.")]
@@ -79,9 +126,6 @@ public class VRDashboardUIController : MonoBehaviour
     [SerializeField] private bool useUnifiedCardBackground = true;
     [SerializeField] private Color unifiedCardColor = new Color(0.07f, 0.11f, 0.16f, 0.66f);
     [SerializeField] private Vector2 unifiedCardPadding = new Vector2(22f, 16f);
-    [Tooltip("Adds extra top extension so the game header has breathing room.")]
-    [Range(0f, 120f)]
-    [SerializeField] private float unifiedCardExtraTop = 14f;
     [Tooltip("Adds extra downward extension so the feedback row remains inside the card.")]
     [Range(0f, 120f)]
     [SerializeField] private float unifiedCardExtraBottom = 50f;
@@ -91,61 +135,12 @@ public class VRDashboardUIController : MonoBehaviour
     [Range(30, 220)]
     [SerializeField] private int maxFeedbackCharacters = 90;
 
-    [Header("Game HUD Skin")]
-    [SerializeField] private bool useGameHudSkin = true;
-    [SerializeField] private bool applySideLayoutInAllModes = true;
-    [SerializeField] private bool useSplitSideLayout = true;
-    [SerializeField] private int scorePerRep = 120;
-    [SerializeField] private int scorePerAccuracyPoint = 4;
-    [SerializeField] private int scorePerLevel = 1200;
-    [SerializeField] private Color scoreColor = new Color(0.97f, 0.81f, 0.22f, 0.98f);
-    [SerializeField] private Color rankBronze = new Color(0.77f, 0.56f, 0.34f, 0.98f);
-    [SerializeField] private Color rankSilver = new Color(0.77f, 0.82f, 0.90f, 0.98f);
-    [SerializeField] private Color rankGold = new Color(0.98f, 0.86f, 0.35f, 0.98f);
-    [SerializeField] private Color rankPlatinum = new Color(0.51f, 0.93f, 0.93f, 0.98f);
-    [SerializeField] private Vector2 leftHudViewport = new Vector2(0.03f, 0.86f);
-    [SerializeField] private Vector2 rightHudViewport = new Vector2(0.74f, 0.86f);
-    [SerializeField] private Vector2 tickerViewport = new Vector2(0.50f, 0.08f);
-    [Range(0.01f, 0.18f)]
-    [SerializeField] private float hudRowStep = 0.045f;
-    [SerializeField] private Vector2 leftHudSize = new Vector2(0.32f, 0.24f);
-    [SerializeField] private Vector2 rightHudSize = new Vector2(0.24f, 0.20f);
-    [SerializeField] private Vector2 tickerHudSize = new Vector2(0.58f, 0.08f);
-    [SerializeField] private float hudRowSpacingPixels = 32f;
-    [SerializeField] private bool enableHudChrome = true;
-    [SerializeField] private Color hudPanelColor = new Color(0.03f, 0.07f, 0.13f, 0.74f);
-    [SerializeField] private Color hudPanelBorderColor = new Color(0.26f, 0.74f, 1f, 0.55f);
-    [SerializeField] private Color hudTickerColor = new Color(0.02f, 0.04f, 0.08f, 0.82f);
-    [SerializeField] private Color hudProgressTrackColor = new Color(1f, 1f, 1f, 0.18f);
-
-    [Header("Gamification Overlay")]
-    [SerializeField] private bool enableGameOverlay = true;
-    [SerializeField] private TMP_Text gameOverlayScoreText;
-    [SerializeField] private TMP_Text gameOverlayLevelText;
-    [SerializeField] private TMP_Text gameOverlayComboText;
-    [SerializeField] private TMP_Text gameOverlayAchievementText;
-    [SerializeField] private float scoreTweenDuration = 0.6f;
-    [SerializeField] private float comboPulseDuration = 0.3f;
-    [SerializeField] private float achievementDisplayDuration = 2.5f;
-
     private readonly Dictionary<TMP_Text, float> _baseFontSizes = new Dictionary<TMP_Text, float>();
     private readonly Dictionary<TMP_Text, Image> _cardsByText = new Dictionary<TMP_Text, Image>();
+    private readonly Dictionary<TMP_Text, Image> _gamificationChipByText = new Dictionary<TMP_Text, Image>();
     private RectTransform _resolvedRoot;
     private Image _unifiedCardImage;
-    private Image _leftHudPanel;
-    private Image _rightHudPanel;
-    private Image _tickerHudPanel;
-    private Image _qualityTrackImage;
-
-    // Gamification tracking
-    private int _displayedScore = 0;
-    private int _targetScore = 0;
-    private float _scoreTweenTimer = 0f;
-    private int _lastCombo = 0;
-    private float _comboPulseTimer = 0f;
-    private Queue<string> _achievementQueue = new Queue<string>();
-    private string _currentAchievement = "";
-    private float _achievementDisplayTimer = 0f;
+    private Image _gamificationColumnImage;
 
     private void Awake()
     {
@@ -163,12 +158,13 @@ public class VRDashboardUIController : MonoBehaviour
     {
         ValidateBindings();
         ResolveRootAndCamera();
-        CleanupSplitHudArtifacts();
         CacheBaseFontSizes();
         ApplyDashboardStyle();
+        ConfigureTopHudLayout();
         BuildStatCards();
         BuildUnifiedCard();
         RearrangeStats();
+        BuildGamificationChrome();
         RefreshCardGeometry();
     }
 
@@ -196,7 +192,7 @@ public class VRDashboardUIController : MonoBehaviour
     private void LateUpdate()
     {
         ApplyPinnedAnchor();
-        UpdateGameOverlay();
+        ConfigureTopHudLayout();
         RefreshCardGeometry();
     }
 
@@ -207,19 +203,30 @@ public class VRDashboardUIController : MonoBehaviour
         string prettyExercise = PrettyExercise(packet.exercise);
         float qualityPercent = ParsePercent(packet.formQuality);
         Color statusColor = GetStatusColor(packet.status);
+        int repCount = Mathf.Max(0, packet.repCount);
+
+        int score = ResolveScore(packet, repCount, qualityPercent);
+        int level = ResolveLevel(packet, score);
+        int combo = ResolveCombo(packet, repCount, qualityPercent);
+        string rank = ResolveRank(packet, qualityPercent);
+        string[] achievements = ResolveAchievements(packet, repCount, qualityPercent, combo);
 
         string phaseValue = string.IsNullOrWhiteSpace(packet.phase) ? "UNKNOWN" : packet.phase.ToUpperInvariant();
         string statusValue = string.IsNullOrWhiteSpace(packet.status) ? "WAITING" : packet.status.ToUpperInvariant();
 
         SetText(exerciseText, $"<b><size=122%>{prettyExercise.ToUpperInvariant()} DASHBOARD</size></b>");
-        SetText(phaseText, $"<size=84%><color=#FFFFFFFF>PHASE</color></size>  <b>{phaseValue}</b>");
-        SetText(repsText, $"<size=82%><color=#FFFFFFFF>REPS</color></size>  <b>{packet.repCount}</b>");
-        SetText(angleText, $"<size=82%><color=#FFFFFFFF>CURRENT ANGLE</color></size>  <b>{Mathf.RoundToInt(packet.currentAngle)} deg</b>");
-        SetText(targetText, $"<size=82%><color=#FFFFFFFF>TARGET</color></size>  <b>{Mathf.RoundToInt(packet.pushTarget)} deg</b>");
-        SetText(minText, $"<size=82%><color=#FFFFFFFF>MIN THRESHOLD</color></size>  <b>{Mathf.RoundToInt(packet.minimumThreshold)} deg</b>");
-        SetText(qualityText, $"<size=82%><color=#FFFFFFFF>FORM QUALITY</color></size>  <b><color=#{ColorToHex(GetQualityColor(qualityPercent))}>{Mathf.RoundToInt(qualityPercent)}%</color></b>");
-        SetText(statusText, $"<size=84%><color=#FFFFFFFF>SYSTEM STATUS</color></size>  <b><color=#{ColorToHex(statusColor)}>[ {statusValue} ]</color></b>");
-
+        SetText(scoreText, $"<size=72%><color=#FFFFFFAA>SCORE</color></size>  <b><size=110%>{score}</size></b>");
+        SetText(levelText, $"<size=72%><color=#FFFFFFAA>LEVEL</color></size>  <b><size=110%>{level}</size></b>");
+        SetText(comboText, $"<size=72%><color=#FFFFFFAA>COMBO</color></size>  <b><size=110%>x{combo}</size></b>");
+        SetText(rankText, $"<size=72%><color=#FFFFFFAA>RANK</color></size>  <b><size=106%><color=#{ColorToHex(GetRankColor(rank))}>{PrettyRank(rank)}</color></size></b>");
+        SetText(achievementsText, $"<size=62%><color=#FFFFFF99>ACHIEVEMENTS</color></size>\n<b>{FormatAchievements(achievements)}</b>");
+        SetText(phaseText, $"<size=86%><color=#7FE7FF>PHASE</color></size>  <b><size=118%>{phaseValue}</size></b>");
+        SetText(repsText, $"<size=86%><color=#7FE7FF>REPS</color></size>  <b><size=122%>{repCount}</size></b>");
+        SetText(angleText, $"<size=84%><color=#7FE7FF>ANGLE</color></size>  <b><size=116%>{Mathf.RoundToInt(packet.currentAngle)} deg</size></b>");
+        SetText(targetText, $"<size=84%><color=#7FE7FF>PUSH</color></size>  <b><size=118%>{Mathf.RoundToInt(packet.pushTarget)} deg</size></b>");
+        SetText(minText, $"<size=84%><color=#7FE7FF>MIN</color></size>  <b><size=116%>{Mathf.RoundToInt(packet.minimumThreshold)} deg</size></b>");
+        SetText(qualityText, $"<size=84%><color=#7FE7FF>FORM</color></size>  <b><size=118%><color=#{ColorToHex(GetQualityColor(qualityPercent))}>{Mathf.RoundToInt(qualityPercent)}%</color></size></b>");
+        SetText(statusText, $"<size=84%><color=#7FE7FF>STATUS</color></size>  <b><size=114%><color=#{ColorToHex(statusColor)}>{statusValue}</color></size></b>");
         string feedbackValue = string.IsNullOrWhiteSpace(packet.feedback)
             ? "Awaiting movement feedback..."
             : Truncate(packet.feedback.Trim(), maxFeedbackCharacters);
@@ -227,144 +234,10 @@ public class VRDashboardUIController : MonoBehaviour
 
         int done = packet.calibration != null ? packet.calibration.count : 0;
         int required = packet.calibration != null ? packet.calibration.required : 3;
-        SetText(calibrationText, $"<size=82%><color=#FFFFFFB8>CALIBRATION</color></size>  <b>{done}/{required}</b>");
+        SetText(calibrationText, $"<size=84%><color=#7FE7FF>CALIBRATION</color></size>  <b><size=118%>{done}/{required}</size></b>");
 
         UpdateQualityBar(packet.formQuality);
         UpdateStatusCard(statusColor);
-        
-        // Process gamification
-        if (enableGameOverlay)
-        {
-            ProcessGameification(packet);
-        }
-    }
-
-    private void ProcessGameification(DashboardPacket packet)
-    {
-        // Start score tween if score changed
-        if (packet.score != _targetScore)
-        {
-            _targetScore = packet.score;
-            _scoreTweenTimer = 0f;
-        }
-
-        // Trigger combo pulse and queue achievements if combo changed
-        if (packet.combo != _lastCombo)
-        {
-            _lastCombo = packet.combo;
-            _comboPulseTimer = 0f;
-        }
-
-        // Queue new achievements
-        if (packet.achievements != null && packet.achievements.Length > 0)
-        {
-            foreach (string achievement in packet.achievements)
-            {
-                if (!string.IsNullOrEmpty(achievement))
-                {
-                    _achievementQueue.Enqueue(achievement);
-                }
-            }
-        }
-
-        // Debug display
-        if (gameOverlayLevelText != null)
-        {
-            Color rankColor = GetRankColor(packet.rank);
-            SetText(gameOverlayLevelText, $"<color=#{ColorToHex(rankColor)}>{packet.rank}</color> | LVL {packet.level}");
-        }
-    }
-
-    private void UpdateGameOverlay()
-    {
-        if (!enableGameOverlay)
-            return;
-
-        // Update score with tween
-        UpdateScoreTween();
-
-        // Update combo pulse
-        UpdateComboPulse();
-
-        // Update achievement display
-        UpdateAchievementDisplay();
-    }
-
-    private void UpdateScoreTween()
-    {
-        if (gameOverlayScoreText == null)
-            return;
-
-        if (_displayedScore < _targetScore && _scoreTweenTimer < scoreTweenDuration)
-        {
-            _scoreTweenTimer += Time.deltaTime;
-            float t = _scoreTweenTimer / scoreTweenDuration;
-            int nextScore = Mathf.Lerp(_displayedScore, _targetScore, t);
-            _displayedScore = nextScore;
-            SetText(gameOverlayScoreText, $"<b><color=#{ColorToHex(scoreColor)}>{_displayedScore:D6}</color></b>");
-        }
-        else if (_displayedScore != _targetScore)
-        {
-            _displayedScore = _targetScore;
-            SetText(gameOverlayScoreText, $"<b><color=#{ColorToHex(scoreColor)}>{_displayedScore:D6}</color></b>");
-        }
-    }
-
-    private void UpdateComboPulse()
-    {
-        if (gameOverlayComboText == null || _lastCombo <= 0)
-            return;
-
-        if (_comboPulseTimer < comboPulseDuration)
-        {
-            _comboPulseTimer += Time.deltaTime;
-            float t = _comboPulseTimer / comboPulseDuration;
-            float pulse = 1f + Mathf.Sin(t * Mathf.PI) * 0.4f;
-            gameOverlayComboText.rectTransform.localScale = Vector3.one * pulse;
-            SetText(gameOverlayComboText, $"<b><size=140%>×{_lastCombo}</size></b>");
-        }
-        else
-        {
-            gameOverlayComboText.rectTransform.localScale = Vector3.one;
-            SetText(gameOverlayComboText, $"<b><size=120%>×{_lastCombo}</size></b>");
-        }
-    }
-
-    private void UpdateAchievementDisplay()
-    {
-        if (gameOverlayAchievementText == null)
-            return;
-
-        // Show current achievement
-        if (!string.IsNullOrEmpty(_currentAchievement))
-        {
-            _achievementDisplayTimer -= Time.deltaTime;
-            if (_achievementDisplayTimer <= 0f)
-            {
-                _currentAchievement = "";
-                gameOverlayAchievementText.text = "";
-            }
-            else
-            {
-                // Fade out effect
-                float alpha = _achievementDisplayTimer / achievementDisplayDuration;
-                SetText(gameOverlayAchievementText, $"<color=#FFFF99FF><b>⭐ {_currentAchievement}</b></color>");
-            }
-        }
-        else if (_achievementQueue.Count > 0)
-        {
-            // Dequeue next achievement
-            _currentAchievement = _achievementQueue.Dequeue();
-            _achievementDisplayTimer = achievementDisplayDuration;
-        }
-    }
-
-    private Color GetRankColor(string rank)
-    {
-        if (rank == "PLATINUM") return rankPlatinum;
-        if (rank == "GOLD") return rankGold;
-        if (rank == "SILVER") return rankSilver;
-        return rankBronze;
     }
 
     private void UpdateQualityBar(string quality)
@@ -413,7 +286,7 @@ public class VRDashboardUIController : MonoBehaviour
         if (field != null)
         {
             field.richText = true;
-            field.text = ToSupportedText(value);
+            field.text = value;
         }
     }
 
@@ -421,6 +294,11 @@ public class VRDashboardUIController : MonoBehaviour
     {
         _baseFontSizes.Clear();
         CacheTextSize(exerciseText);
+        CacheTextSize(scoreText);
+        CacheTextSize(levelText);
+        CacheTextSize(comboText);
+        CacheTextSize(rankText);
+        CacheTextSize(achievementsText);
         CacheTextSize(phaseText);
         CacheTextSize(repsText);
         CacheTextSize(angleText);
@@ -447,12 +325,6 @@ public class VRDashboardUIController : MonoBehaviour
             dashboardRoot.localScale = Vector3.one * dashboardScale;
         }
 
-        if (panelBackground == null)
-        {
-            // Safe default so the background still works even if not wired in the Inspector.
-            panelBackground = dashboardRoot != null ? dashboardRoot.GetComponent<Image>() : GetComponent<Image>();
-        }
-
         if (panelBackground != null)
         {
             panelBackground.color = panelColor;
@@ -460,6 +332,11 @@ public class VRDashboardUIController : MonoBehaviour
         }
 
         ApplyTextTheme(exerciseText, titleColor);
+        ApplyTextTheme(scoreText, scoreColor, TextAlignmentOptions.Center);
+        ApplyTextTheme(levelText, levelColor, TextAlignmentOptions.Center);
+        ApplyTextTheme(comboText, comboColor, TextAlignmentOptions.Center);
+        ApplyTextTheme(rankText, rankColor, TextAlignmentOptions.Center);
+        ApplyTextTheme(achievementsText, achievementColor, TextAlignmentOptions.Center);
         ApplyTextTheme(phaseText, bodyColor);
         ApplyTextTheme(repsText, bodyColor);
         ApplyTextTheme(angleText, bodyColor);
@@ -474,7 +351,6 @@ public class VRDashboardUIController : MonoBehaviour
         {
             exerciseText.characterSpacing = 1.8f;
             exerciseText.enableWordWrapping = false;
-            exerciseText.overflowMode = TextOverflowModes.Ellipsis;
         }
 
         if (feedbackText != null)
@@ -485,18 +361,23 @@ public class VRDashboardUIController : MonoBehaviour
         ApplyOverflowModes();
     }
 
-    private void ApplyTextTheme(TMP_Text text, Color color)
+    private void ApplyTextTheme(TMP_Text text, Color color, TextAlignmentOptions alignment = TextAlignmentOptions.Left)
     {
         if (text == null)
             return;
 
         text.enableWordWrapping = false;
         text.color = color;
-        text.alignment = TextAlignmentOptions.Left;
+        text.alignment = alignment;
 
         if (_baseFontSizes.TryGetValue(text, out float baseSize))
         {
-            text.fontSize = baseSize * textScale;
+            float maxSize = baseSize * textScale;
+            float minSize = baseSize * autosizeMinMultiplier;
+            text.fontSize = maxSize;
+            text.enableAutoSizing = adaptiveTextAutosize;
+            text.fontSizeMin = Mathf.Min(minSize, maxSize);
+            text.fontSizeMax = Mathf.Max(minSize, maxSize);
         }
     }
 
@@ -534,6 +415,11 @@ public class VRDashboardUIController : MonoBehaviour
         if (!enableStatCards || useUnifiedCardBackground)
             return;
 
+        CreateCardForText(scoreText, statCardColor);
+        CreateCardForText(levelText, statCardColor);
+        CreateCardForText(comboText, statCardColor);
+        CreateCardForText(rankText, statCardColor);
+        CreateCardForText(achievementsText, statCardColor);
         CreateCardForText(repsText, statCardColor);
         CreateCardForText(angleText, statCardColor);
         CreateCardForText(targetText, statCardColor);
@@ -603,6 +489,11 @@ public class VRDashboardUIController : MonoBehaviour
         TMP_Text[] order =
         {
             exerciseText,
+            scoreText,
+            levelText,
+            comboText,
+            rankText,
+            achievementsText,
             phaseText,
             statusText,
             repsText,
@@ -729,6 +620,8 @@ public class VRDashboardUIController : MonoBehaviour
             }
         }
 
+        RefreshGamificationChrome();
+
         RefreshUnifiedCardGeometry();
     }
 
@@ -775,6 +668,11 @@ public class VRDashboardUIController : MonoBehaviour
         TMP_Text[] blockTexts =
         {
             exerciseText,
+            scoreText,
+            levelText,
+            comboText,
+            rankText,
+            achievementsText,
             phaseText,
             statusText,
             repsText,
@@ -826,7 +724,7 @@ public class VRDashboardUIController : MonoBehaviour
         minX -= unifiedCardPadding.x;
         maxX += unifiedCardPadding.x;
         minY -= (unifiedCardPadding.y + unifiedCardExtraBottom);
-        maxY += (unifiedCardPadding.y + unifiedCardExtraTop);
+        maxY += unifiedCardPadding.y;
 
         float width = maxX - minX;
         float height = maxY - minY;
@@ -843,7 +741,7 @@ public class VRDashboardUIController : MonoBehaviour
 
     private RectTransform GetSharedTextParent()
     {
-        TMP_Text[] texts = { exerciseText, phaseText, repsText, angleText, targetText, minText, qualityText, statusText, feedbackText, calibrationText };
+        TMP_Text[] texts = { exerciseText, scoreText, levelText, comboText, rankText, achievementsText, phaseText, repsText, angleText, targetText, minText, qualityText, statusText, feedbackText, calibrationText };
         for (int i = 0; i < texts.Length; i++)
         {
             TMP_Text t = texts[i];
@@ -859,7 +757,7 @@ public class VRDashboardUIController : MonoBehaviour
     private int GetTopMostTextSiblingIndex(RectTransform parent)
     {
         int best = int.MaxValue;
-        TMP_Text[] texts = { exerciseText, phaseText, repsText, angleText, targetText, minText, qualityText, statusText, feedbackText, calibrationText };
+        TMP_Text[] texts = { exerciseText, scoreText, levelText, comboText, rankText, achievementsText, phaseText, repsText, angleText, targetText, minText, qualityText, statusText, feedbackText, calibrationText };
         for (int i = 0; i < texts.Length; i++)
         {
             TMP_Text t = texts[i];
@@ -876,6 +774,11 @@ public class VRDashboardUIController : MonoBehaviour
     private void ApplyOverflowModes()
     {
         ApplyOverflowMode(exerciseText, TextOverflowModes.Truncate);
+        ApplyOverflowMode(scoreText, TextOverflowModes.Overflow);
+        ApplyOverflowMode(levelText, TextOverflowModes.Overflow);
+        ApplyOverflowMode(comboText, TextOverflowModes.Overflow);
+        ApplyOverflowMode(rankText, TextOverflowModes.Overflow);
+        ApplyOverflowMode(achievementsText, TextOverflowModes.Ellipsis);
         ApplyOverflowMode(phaseText, TextOverflowModes.Ellipsis);
         ApplyOverflowMode(repsText, TextOverflowModes.Ellipsis);
         ApplyOverflowMode(angleText, TextOverflowModes.Ellipsis);
@@ -906,508 +809,6 @@ public class VRDashboardUIController : MonoBehaviour
         return text.Substring(0, maxChars - 3).TrimEnd() + "...";
     }
 
-    private void NudgeTextSize(TMP_Text text, float multiplier)
-    {
-        if (text == null)
-            return;
-
-        if (_baseFontSizes.TryGetValue(text, out float baseSize))
-        {
-            text.fontSize = baseSize * textScale * multiplier;
-        }
-    }
-
-    private string GetRankName(float qualityPercent)
-    {
-        if (qualityPercent >= 95f) return "PLATINUM";
-        if (qualityPercent >= 85f) return "GOLD";
-        if (qualityPercent >= 70f) return "SILVER";
-        return "BRONZE";
-    }
-
-    private Color GetRankColor(float qualityPercent)
-    {
-        if (qualityPercent >= 95f) return rankPlatinum;
-        if (qualityPercent >= 85f) return rankGold;
-        if (qualityPercent >= 70f) return rankSilver;
-        return rankBronze;
-    }
-
-    private static string BuildMissionState(string phaseValue, string statusValue)
-    {
-        if (phaseValue.Contains("BASELINE"))
-            return "WARMUP";
-
-        if (statusValue.Contains("PAUSE"))
-            return "PAUSED";
-
-        if (statusValue.Contains("TRACK") || statusValue.Contains("GOOD") || statusValue.Contains("READY"))
-            return "LIVE";
-
-        return statusValue;
-    }
-
-    private static string BuildAsciiBar(float percent, int width)
-    {
-        int safeWidth = Mathf.Max(4, width);
-        int filled = Mathf.Clamp(Mathf.RoundToInt((Mathf.Clamp(percent, 0f, 100f) / 100f) * safeWidth), 0, safeWidth);
-        return "[" + new string('#', filled) + new string('-', safeWidth - filled) + "]";
-    }
-
-    private static string GetBonusTag(float qualityPercent)
-    {
-        if (qualityPercent >= 95f) return "JACKPOT";
-        if (qualityPercent >= 85f) return "BOOST";
-        if (qualityPercent >= 70f) return "BUILD";
-        return "WARMUP";
-    }
-
-    private static string GetObjectiveText(string missionState, string statusValue)
-    {
-        if (missionState == "WARMUP") return "LOCK BASELINE";
-        if (statusValue.Contains("PAUSE")) return "HOLD POSITION";
-        if (statusValue.Contains("GOOD") || statusValue.Contains("TRACK")) return "CHAIN CLEAN REPS";
-        return "HIT GOAL ANGLE";
-    }
-
-    private static string GetTickerText(string feedback, string statusValue)
-    {
-        if (!string.IsNullOrWhiteSpace(feedback))
-            return Truncate(feedback.Trim().ToUpperInvariant(), 48);
-
-        if (!string.IsNullOrWhiteSpace(statusValue))
-            return statusValue;
-
-        return "AWAITING INPUT";
-    }
-
-    private RectTransform _qualityBarContainer;
-
-    private void ApplySplitHudLayout()
-    {
-        if (!useSplitSideLayout || (!useGameHudSkin && !applySideLayoutInAllModes))
-        {
-            SetHudChromeVisible(false);
-            return;
-        }
-
-        RectTransform parent = GetSharedTextParent();
-        if (parent == null)
-            return;
-
-        bool leftHas = AnyHudTextAssigned(exerciseText, phaseText, repsText, qualityText, statusText);
-        bool rightHas = AnyHudTextAssigned(angleText, targetText, minText, calibrationText);
-        bool tickerHas = feedbackText != null;
-
-        if (!leftHas && !rightHas && !tickerHas)
-        {
-            SetHudChromeVisible(false);
-            return;
-        }
-
-        EnsureHudChrome(parent);
-
-        SetPanelState(_leftHudPanel, leftHas, enableHudChrome);
-        SetPanelState(_rightHudPanel, rightHas, enableHudChrome);
-        SetPanelState(_tickerHudPanel, tickerHas, enableHudChrome);
-
-        Vector2 leftViewport = ClampViewport(leftHudViewport);
-        Vector2 rightViewport = ClampViewport(rightHudViewport);
-        Vector2 tickerViewportPos = ClampViewport(tickerViewport);
-
-        float leftMinHeight = EstimateBlockMinHeightPixels(new TMP_Text[] { exerciseText, phaseText, repsText, qualityText, statusText }, includeProgressBar: qualityBarFill != null);
-        float rightMinHeight = EstimateBlockMinHeightPixels(new TMP_Text[] { angleText, targetText, minText, calibrationText }, includeProgressBar: false);
-
-        LayoutHudPanel(_leftHudPanel, parent, leftViewport, leftHudSize, false, leftMinHeight);
-        LayoutHudPanel(_rightHudPanel, parent, rightViewport, rightHudSize, false, rightMinHeight);
-        LayoutHudPanel(_tickerHudPanel, parent, tickerViewportPos, tickerHudSize, true, 0f);
-
-        if (leftHas && _leftHudPanel != null)
-        {
-            PlaceHudTextBlockTopLeft(_leftHudPanel.rectTransform,
-                new TMP_Text[] { exerciseText, phaseText, repsText, qualityText, statusText },
-                xPadding: 16f,
-                topPadding: 16f);
-
-            AttachProgressBarToHud(xPadding: 16f, bottomPadding: 12f, height: 10f);
-        }
-
-        if (rightHas && _rightHudPanel != null)
-        {
-            PlaceHudTextBlockTopLeft(_rightHudPanel.rectTransform,
-                new TMP_Text[] { angleText, targetText, minText, calibrationText },
-                xPadding: 16f,
-                topPadding: 16f);
-        }
-
-        if (tickerHas && _tickerHudPanel != null)
-        {
-            PlaceHudTextCentered(_tickerHudPanel.rectTransform, feedbackText, padding: 14f);
-        }
-    }
-
-    private static Vector2 ClampViewport(Vector2 v)
-    {
-        return new Vector2(Mathf.Clamp01(v.x), Mathf.Clamp01(v.y));
-    }
-
-    private static bool AnyHudTextAssigned(params TMP_Text[] texts)
-    {
-        if (texts == null) return false;
-        for (int i = 0; i < texts.Length; i++)
-        {
-            if (texts[i] != null)
-                return true;
-        }
-        return false;
-    }
-
-    private float EstimateBlockMinHeightPixels(TMP_Text[] texts, bool includeProgressBar)
-    {
-        const float topPadding = 16f;
-        const float bottomPadding = 22f;
-
-        float h = topPadding + bottomPadding;
-        if (texts != null)
-        {
-            for (int i = 0; i < texts.Length; i++)
-            {
-                TMP_Text t = texts[i];
-                if (t == null) continue;
-                h += EstimateLineStepPixels(t);
-            }
-        }
-
-        if (includeProgressBar)
-        {
-            h += 18f;
-        }
-
-        return Mathf.Max(60f, h);
-    }
-
-    private float EstimateLineStepPixels(TMP_Text text)
-    {
-        if (text == null)
-            return Mathf.Max(20f, hudRowSpacingPixels);
-
-        float preferred = text.preferredHeight;
-        if (preferred < 1f)
-        {
-            preferred = Mathf.Max(14f, text.fontSize * 1.22f);
-        }
-
-        return Mathf.Max(preferred, Mathf.Max(20f, hudRowSpacingPixels));
-    }
-
-    private void PlaceHudTextBlockTopLeft(RectTransform panel, TMP_Text[] texts, float xPadding, float topPadding)
-    {
-        if (panel == null || texts == null)
-            return;
-
-        float y = -topPadding;
-        for (int i = 0; i < texts.Length; i++)
-        {
-            TMP_Text text = texts[i];
-            if (text == null) continue;
-
-            RectTransform rt = text.rectTransform;
-            if (rt == null) continue;
-
-            if (rt.parent != panel)
-            {
-                rt.SetParent(panel, false);
-            }
-
-            rt.anchorMin = new Vector2(0f, 1f);
-            rt.anchorMax = new Vector2(1f, 1f);
-            rt.pivot = new Vector2(0f, 1f);
-            rt.anchoredPosition = new Vector2(xPadding, y);
-            rt.sizeDelta = new Vector2(-2f * xPadding, 0f);
-            rt.localRotation = Quaternion.identity;
-
-            text.alignment = TextAlignmentOptions.Left;
-
-            y -= EstimateLineStepPixels(text);
-        }
-    }
-
-    private void PlaceHudTextCentered(RectTransform panel, TMP_Text text, float padding)
-    {
-        if (panel == null || text == null)
-            return;
-
-        RectTransform rt = text.rectTransform;
-        if (rt == null)
-            return;
-
-        if (rt.parent != panel)
-        {
-            rt.SetParent(panel, false);
-        }
-
-        rt.anchorMin = new Vector2(0f, 0f);
-        rt.anchorMax = new Vector2(1f, 1f);
-        rt.pivot = new Vector2(0.5f, 0.5f);
-        rt.anchoredPosition = Vector2.zero;
-        rt.sizeDelta = new Vector2(-2f * padding, -2f * padding);
-        rt.localRotation = Quaternion.identity;
-
-        text.alignment = TextAlignmentOptions.Center;
-    }
-
-    private void EnsureHudChrome(RectTransform parent)
-    {
-        _leftHudPanel = EnsurePanelImage(parent, "HUD_LeftPanel", hudPanelColor);
-        _rightHudPanel = EnsurePanelImage(parent, "HUD_RightPanel", hudPanelColor);
-        _tickerHudPanel = EnsurePanelImage(parent, "HUD_TickerPanel", hudTickerColor);
-    }
-
-    private Image EnsurePanelImage(RectTransform parent, string name, Color color)
-    {
-        Transform existing = parent.Find(name);
-        GameObject obj = existing != null
-            ? existing.gameObject
-            : new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Outline), typeof(Shadow));
-
-        obj.transform.SetParent(parent, false);
-        Image image = obj.GetComponent<Image>();
-        image.color = color;
-        image.raycastTarget = false;
-
-        Outline outline = obj.GetComponent<Outline>();
-        outline.effectColor = hudPanelBorderColor;
-        outline.effectDistance = new Vector2(1f, -1f);
-
-        Shadow shadow = obj.GetComponent<Shadow>();
-        shadow.effectColor = new Color(0f, 0f, 0f, 0.42f);
-        shadow.effectDistance = new Vector2(0f, -3f);
-
-        return image;
-    }
-
-    private static void SetPanelState(Image panel, bool active, bool chromeVisible)
-    {
-        if (panel == null)
-            return;
-
-        panel.gameObject.SetActive(active);
-        panel.enabled = chromeVisible;
-
-        Outline outline = panel.GetComponent<Outline>();
-        if (outline != null) outline.enabled = chromeVisible;
-
-        Shadow shadow = panel.GetComponent<Shadow>();
-        if (shadow != null) shadow.enabled = chromeVisible;
-    }
-
-    private void LayoutHudPanel(Image panel, RectTransform parent, Vector2 viewportTopLeft, Vector2 sizeViewport, bool centerPanel, float minHeightPixels)
-    {
-        if (panel == null || parent == null)
-            return;
-
-        RectTransform rt = panel.rectTransform;
-
-        Vector2 safeSize = new Vector2(Mathf.Clamp(sizeViewport.x, 0.1f, 0.95f), Mathf.Clamp(sizeViewport.y, 0.05f, 0.7f));
-        float targetW = parent.rect.width * safeSize.x;
-        float targetH = parent.rect.height * safeSize.y;
-
-        if (minHeightPixels > 0f)
-        {
-            targetH = Mathf.Max(targetH, minHeightPixels);
-        }
-
-        targetW = Mathf.Clamp(targetW, 40f, parent.rect.width * 0.95f);
-        targetH = Mathf.Clamp(targetH, 40f, parent.rect.height * 0.95f);
-
-        float normW = parent.rect.width > 0f ? (targetW / parent.rect.width) : safeSize.x;
-        float normH = parent.rect.height > 0f ? (targetH / parent.rect.height) : safeSize.y;
-
-        Vector2 clamped = ClampViewport(viewportTopLeft);
-        if (centerPanel)
-        {
-            float x = Mathf.Clamp(clamped.x, normW * 0.5f, 1f - (normW * 0.5f));
-            float y = Mathf.Clamp(clamped.y, normH * 0.5f, 1f - (normH * 0.5f));
-            rt.anchorMin = new Vector2(x, y);
-            rt.anchorMax = new Vector2(x, y);
-            rt.pivot = new Vector2(0.5f, 0.5f);
-        }
-        else
-        {
-            float x = Mathf.Clamp(clamped.x, 0f, 1f - normW);
-            float y = Mathf.Clamp(clamped.y, normH, 1f);
-            rt.anchorMin = new Vector2(x, y);
-            rt.anchorMax = new Vector2(x, y);
-            rt.pivot = new Vector2(0f, 1f);
-        }
-
-        rt.anchoredPosition = Vector2.zero;
-        rt.sizeDelta = new Vector2(targetW, targetH);
-        rt.localScale = Vector3.one;
-    }
-
-    private void SetHudChromeVisible(bool visible)
-    {
-        if (_leftHudPanel != null) _leftHudPanel.gameObject.SetActive(visible);
-        if (_rightHudPanel != null) _rightHudPanel.gameObject.SetActive(visible);
-        if (_tickerHudPanel != null) _tickerHudPanel.gameObject.SetActive(visible);
-        if (_qualityTrackImage != null) _qualityTrackImage.enabled = visible;
-        if (_qualityBarContainer != null) _qualityBarContainer.gameObject.SetActive(visible);
-    }
-
-    private RectTransform GuessQualityBarRoot(RectTransform sharedTextParent)
-    {
-        if (qualityBarRoot != null)
-            return qualityBarRoot;
-
-        if (qualityBarFill == null)
-            return null;
-
-        RectTransform current = qualityBarFill.rectTransform;
-        RectTransform lastSafe = current;
-
-        // Walk up a few levels, but never past the shared text parent (to avoid moving the whole dashboard).
-        for (int i = 0; i < 4; i++)
-        {
-            RectTransform p = lastSafe.parent as RectTransform;
-            if (p == null || p == sharedTextParent)
-                break;
-
-            lastSafe = p;
-        }
-
-        return lastSafe;
-    }
-
-    private void AttachProgressBarToHud(float xPadding, float bottomPadding, float height)
-    {
-        if (qualityBarFill == null || _leftHudPanel == null)
-            return;
-
-        RectTransform leftPanel = _leftHudPanel.rectTransform;
-        RectTransform sharedParent = GetSharedTextParent();
-        RectTransform barRoot = GuessQualityBarRoot(sharedParent);
-        if (barRoot == null)
-            return;
-
-        if (_qualityBarContainer == null)
-        {
-            GameObject container = new GameObject("HUD_ProgressBar", typeof(RectTransform));
-            container.transform.SetParent(leftPanel, false);
-            _qualityBarContainer = container.GetComponent<RectTransform>();
-        }
-
-        _qualityBarContainer.anchorMin = new Vector2(0f, 0f);
-        _qualityBarContainer.anchorMax = new Vector2(1f, 0f);
-        _qualityBarContainer.pivot = new Vector2(0.5f, 0f);
-        _qualityBarContainer.anchoredPosition = new Vector2(0f, bottomPadding);
-        _qualityBarContainer.sizeDelta = new Vector2(-2f * xPadding, height);
-        _qualityBarContainer.localRotation = Quaternion.identity;
-
-        if (barRoot.parent != _qualityBarContainer)
-        {
-            barRoot.SetParent(_qualityBarContainer, false);
-        }
-
-        barRoot.anchorMin = new Vector2(0f, 0f);
-        barRoot.anchorMax = new Vector2(1f, 1f);
-        barRoot.pivot = new Vector2(0.5f, 0.5f);
-        barRoot.anchoredPosition = Vector2.zero;
-        barRoot.sizeDelta = Vector2.zero;
-        barRoot.localRotation = Quaternion.identity;
-
-        if (_qualityTrackImage == null)
-        {
-            GameObject track = new GameObject("HUD_ProgressTrack", typeof(RectTransform), typeof(Image));
-            track.transform.SetParent(_qualityBarContainer, false);
-            _qualityTrackImage = track.GetComponent<Image>();
-            _qualityTrackImage.raycastTarget = false;
-        }
-
-        _qualityTrackImage.color = hudProgressTrackColor;
-        RectTransform trackRect = _qualityTrackImage.rectTransform;
-        trackRect.anchorMin = new Vector2(0f, 0f);
-        trackRect.anchorMax = new Vector2(1f, 1f);
-        trackRect.pivot = new Vector2(0.5f, 0.5f);
-        trackRect.anchoredPosition = Vector2.zero;
-        trackRect.sizeDelta = Vector2.zero;
-        trackRect.localRotation = Quaternion.identity;
-
-        // Put the track behind the bar root.
-        trackRect.SetSiblingIndex(0);
-    }
-
-    private static string ToSupportedText(string value)
-    {
-        if (string.IsNullOrEmpty(value))
-            return value;
-
-        char[] chars = value.ToCharArray();
-        for (int i = 0; i < chars.Length; i++)
-        {
-            if (chars[i] > 127)
-            {
-                chars[i] = '?';
-            }
-        }
-
-        return new string(chars);
-    }
-
-    private void CleanupSplitHudArtifacts()
-    {
-        // If previous experiments created HUD panel objects and re-parented text into them,
-        // put everything back under the original shared parent and hide the HUD objects.
-        RectTransform parent = GetSharedTextParent();
-        if (parent == null)
-            return;
-
-        string[] hudNames =
-        {
-            "HUD_LeftPanel",
-            "HUD_RightPanel",
-            "HUD_TickerPanel",
-            "HUD_ProgressBar",
-            "HUD_ProgressTrack"
-        };
-
-        for (int i = 0; i < hudNames.Length; i++)
-        {
-            Transform t = parent.Find(hudNames[i]);
-            if (t != null)
-            {
-                t.gameObject.SetActive(false);
-            }
-        }
-
-        TMP_Text[] texts =
-        {
-            exerciseText,
-            phaseText,
-            repsText,
-            angleText,
-            targetText,
-            minText,
-            qualityText,
-            statusText,
-            feedbackText,
-            calibrationText
-        };
-
-        for (int i = 0; i < texts.Length; i++)
-        {
-            TMP_Text t = texts[i];
-            if (t == null || t.rectTransform == null)
-                continue;
-
-            if (t.rectTransform.parent != parent)
-            {
-                t.rectTransform.SetParent(parent, false);
-            }
-        }
-
-    }
-
     private void UpdateStatusCard(Color statusColor)
     {
         if (_cardsByText.TryGetValue(statusText, out Image statusCard) && statusCard != null)
@@ -1416,6 +817,425 @@ public class VRDashboardUIController : MonoBehaviour
             tint.a = Mathf.Clamp01(statusCardColor.a);
             statusCard.color = tint;
         }
+    }
+
+    private void BuildGamificationChrome()
+    {
+        if (!enableGamificationChips)
+            return;
+
+        RectTransform parent = GetSharedTextParent();
+        if (parent == null)
+            return;
+
+        const string columnName = "Dashboard_GamificationColumn";
+        Transform existingColumn = parent.Find(columnName);
+        GameObject columnObject = existingColumn != null
+            ? existingColumn.gameObject
+            : new GameObject(columnName, typeof(RectTransform), typeof(Image), typeof(Shadow));
+        columnObject.transform.SetParent(parent, false);
+
+        _gamificationColumnImage = columnObject.GetComponent<Image>();
+        _gamificationColumnImage.color = gamificationColumnColor;
+        _gamificationColumnImage.raycastTarget = false;
+
+        Shadow columnShadow = columnObject.GetComponent<Shadow>();
+        columnShadow.effectColor = new Color(0f, 0f, 0f, 0.42f);
+        columnShadow.effectDistance = new Vector2(0f, -3f);
+        columnShadow.useGraphicAlpha = true;
+
+        CreateGamificationChip(scoreText, scoreChipColor);
+        CreateGamificationChip(levelText, levelChipColor);
+        CreateGamificationChip(comboText, comboChipColor);
+        CreateGamificationChip(rankText, rankChipColor);
+        CreateGamificationChip(achievementsText, achievementsChipColor);
+
+        RefreshGamificationChrome();
+    }
+
+    private void CreateGamificationChip(TMP_Text text, Color color)
+    {
+        if (text == null || text.rectTransform == null || text.rectTransform.parent == null)
+            return;
+
+        if (_gamificationChipByText.TryGetValue(text, out Image existingChip) && existingChip != null)
+        {
+            existingChip.color = color;
+            return;
+        }
+
+        string chipName = $"{text.name}_GamificationChip";
+        Transform parent = text.rectTransform.parent;
+        Transform existing = parent.Find(chipName);
+        GameObject chipObject = existing != null
+            ? existing.gameObject
+            : new GameObject(chipName, typeof(RectTransform), typeof(Image), typeof(Shadow));
+        chipObject.transform.SetParent(parent, false);
+
+        Image chipImage = chipObject.GetComponent<Image>();
+        chipImage.color = color;
+        chipImage.raycastTarget = false;
+
+        Shadow shadow = chipObject.GetComponent<Shadow>();
+        shadow.effectColor = new Color(0f, 0f, 0f, 0.34f);
+        shadow.effectDistance = new Vector2(0f, -2f);
+        shadow.useGraphicAlpha = true;
+
+        _gamificationChipByText[text] = chipImage;
+    }
+
+    private void RefreshGamificationChrome()
+    {
+        if (!enableGamificationChips || _gamificationChipByText.Count == 0)
+            return;
+
+        RectTransform parent = GetSharedTextParent();
+        if (parent == null)
+            return;
+
+        TMP_Text[] chips = { scoreText, levelText, comboText, rankText, achievementsText };
+
+        bool hasBounds = false;
+        float minX = 0f;
+        float maxX = 0f;
+        float minY = 0f;
+        float maxY = 0f;
+
+        for (int i = 0; i < chips.Length; i++)
+        {
+            TMP_Text text = chips[i];
+            if (text == null || text.rectTransform == null || text.rectTransform.parent != parent)
+                continue;
+
+            if (_gamificationChipByText.TryGetValue(text, out Image chip) && chip != null)
+            {
+                RectTransform textRect = text.rectTransform;
+                RectTransform chipRect = chip.rectTransform;
+                chipRect.anchorMin = textRect.anchorMin;
+                chipRect.anchorMax = textRect.anchorMax;
+                chipRect.pivot = textRect.pivot;
+                chipRect.anchoredPosition = textRect.anchoredPosition;
+                chipRect.sizeDelta = textRect.sizeDelta + (gamificationChipPadding * 2f);
+                chipRect.localScale = Vector3.one;
+                chipRect.SetSiblingIndex(Mathf.Max(0, textRect.GetSiblingIndex() - 1));
+
+                Vector3[] corners = new Vector3[4];
+                chipRect.GetWorldCorners(corners);
+                for (int c = 0; c < 4; c++)
+                {
+                    Vector2 local = parent.InverseTransformPoint(corners[c]);
+                    if (!hasBounds)
+                    {
+                        minX = maxX = local.x;
+                        minY = maxY = local.y;
+                        hasBounds = true;
+                    }
+                    else
+                    {
+                        if (local.x < minX) minX = local.x;
+                        if (local.x > maxX) maxX = local.x;
+                        if (local.y < minY) minY = local.y;
+                        if (local.y > maxY) maxY = local.y;
+                    }
+                }
+            }
+        }
+
+        if (_gamificationColumnImage == null || !hasBounds)
+            return;
+
+        minX -= gamificationColumnPadding.x;
+        maxX += gamificationColumnPadding.x;
+        minY -= gamificationColumnPadding.y;
+        maxY += gamificationColumnPadding.y;
+
+        RectTransform columnRect = _gamificationColumnImage.rectTransform;
+        columnRect.anchorMin = new Vector2(0.5f, 0.5f);
+        columnRect.anchorMax = new Vector2(0.5f, 0.5f);
+        columnRect.pivot = new Vector2(0f, 1f);
+        columnRect.anchoredPosition = new Vector2(minX, maxY);
+        columnRect.sizeDelta = new Vector2(maxX - minX, maxY - minY);
+        columnRect.localScale = Vector3.one;
+
+        int firstChipIndex = int.MaxValue;
+        for (int i = 0; i < chips.Length; i++)
+        {
+            TMP_Text text = chips[i];
+            if (text == null || text.rectTransform == null || text.rectTransform.parent != parent)
+                continue;
+
+            int idx = text.rectTransform.GetSiblingIndex();
+            if (idx < firstChipIndex) firstChipIndex = idx;
+        }
+
+        columnRect.SetSiblingIndex(firstChipIndex == int.MaxValue ? 0 : Mathf.Max(0, firstChipIndex - 1));
+    }
+
+    private void ConfigureTopHudLayout()
+    {
+        if (!compactTopHudLayout)
+            return;
+
+        Canvas.ForceUpdateCanvases();
+        RectTransform parent = GetSharedTextParent();
+        if (parent == null)
+            return;
+
+        float scaleT = Mathf.InverseLerp(1.0f, 2.2f, Mathf.Clamp(textScale, 1.0f, 2.2f));
+        float adaptiveRowGap = topHudRowGap * Mathf.Lerp(1.0f, 1.35f, scaleT);
+        float leftGap = topHudChipGap * Mathf.Clamp(leftSectionSpacingMultiplier, 1.0f, 2.0f);
+        float width = Mathf.Max(1f, parent.rect.width);
+        float height = Mathf.Max(1f, parent.rect.height);
+        float padX = Mathf.Clamp(topHudPadding.x, 10f, width * 0.08f);
+        float padY = Mathf.Clamp(topHudPadding.y, 8f, height * 0.12f);
+        float chipHeight = Mathf.Clamp(height * Mathf.Lerp(0.11f, 0.145f, scaleT), 38f, 86f);
+        float columnWidth = useGamificationColumn
+            ? Mathf.Clamp(width * Mathf.Lerp(0.23f, 0.32f, scaleT), 220f, 460f)
+            : Mathf.Clamp(width * 0.12f, 130f, 240f);
+        float columnX = width - padX - columnWidth - Mathf.Lerp(8f, 16f, scaleT);
+        float leftWidth = Mathf.Max(420f, columnX - padX - leftGap);
+        float rowOneY = -padY;
+        float rowTwoY = rowOneY - chipHeight - adaptiveRowGap;
+        float rowThreeY = rowTwoY - chipHeight - adaptiveRowGap;
+        float rowFourY = rowThreeY - chipHeight - adaptiveRowGap;
+        float rowFiveY = rowFourY - chipHeight - adaptiveRowGap;
+
+        ApplyHudRect(exerciseText, parent, new Vector2(padX, rowOneY), new Vector2(leftWidth, chipHeight + 10f), new Vector2(0f, 1f), new Vector2(0f, 1f), TextAlignmentOptions.Left);
+
+        if (useGamificationColumn)
+        {
+            float gx = gamificationColumnOffset.x;
+            float gy = gamificationColumnOffset.y;
+            float columnChipHeight = Mathf.Clamp(chipHeight * Mathf.Lerp(0.90f, 0.98f, scaleT), 34f, 62f);
+            float columnGap = Mathf.Clamp(adaptiveRowGap * 0.48f, 4f, 11f);
+            float columnRowOneY = rowOneY + gy;
+            float columnRowTwoY = columnRowOneY - columnChipHeight - columnGap;
+            float columnRowThreeY = columnRowTwoY - columnChipHeight - columnGap;
+            float columnRowFourY = columnRowThreeY - columnChipHeight - columnGap;
+            float columnRowFiveY = columnRowFourY - columnChipHeight - columnGap;
+            float columnXOffset = columnX + gx;
+            ApplyHudRect(scoreText, parent, new Vector2(columnXOffset, columnRowOneY), new Vector2(columnWidth, columnChipHeight), new Vector2(0f, 1f), new Vector2(0f, 1f), TextAlignmentOptions.Left);
+            ApplyHudRect(levelText, parent, new Vector2(columnXOffset, columnRowTwoY), new Vector2(columnWidth, columnChipHeight), new Vector2(0f, 1f), new Vector2(0f, 1f), TextAlignmentOptions.Left);
+            ApplyHudRect(comboText, parent, new Vector2(columnXOffset, columnRowThreeY), new Vector2(columnWidth, columnChipHeight), new Vector2(0f, 1f), new Vector2(0f, 1f), TextAlignmentOptions.Left);
+            ApplyHudRect(rankText, parent, new Vector2(columnXOffset, columnRowFourY), new Vector2(columnWidth, columnChipHeight), new Vector2(0f, 1f), new Vector2(0f, 1f), TextAlignmentOptions.Left);
+            ApplyHudRect(achievementsText, parent, new Vector2(columnXOffset, columnRowFiveY), new Vector2(columnWidth, columnChipHeight + 6f), new Vector2(0f, 1f), new Vector2(0f, 1f), TextAlignmentOptions.Left);
+        }
+        else
+        {
+            float chipWidth = Mathf.Clamp(width * 0.12f, 130f, 240f);
+            float rightStart = width - padX - (chipWidth * 4f) - (topHudChipGap * 3f);
+            ApplyHudRect(scoreText, parent, new Vector2(rightStart, rowOneY), new Vector2(chipWidth, chipHeight), new Vector2(0f, 1f), new Vector2(0f, 1f), TextAlignmentOptions.Center);
+            ApplyHudRect(levelText, parent, new Vector2(rightStart + chipWidth + topHudChipGap, rowOneY), new Vector2(chipWidth, chipHeight), new Vector2(0f, 1f), new Vector2(0f, 1f), TextAlignmentOptions.Center);
+            ApplyHudRect(comboText, parent, new Vector2(rightStart + (chipWidth + topHudChipGap) * 2f, rowOneY), new Vector2(chipWidth, chipHeight), new Vector2(0f, 1f), new Vector2(0f, 1f), TextAlignmentOptions.Center);
+            ApplyHudRect(rankText, parent, new Vector2(rightStart + (chipWidth + topHudChipGap) * 3f, rowOneY), new Vector2(chipWidth, chipHeight), new Vector2(0f, 1f), new Vector2(0f, 1f), TextAlignmentOptions.Center);
+            ApplyHudRect(achievementsText, parent, new Vector2(width - padX - (chipWidth * 2f + topHudChipGap), rowTwoY), new Vector2(chipWidth * 2f + topHudChipGap, chipHeight), new Vector2(0f, 1f), new Vector2(0f, 1f), TextAlignmentOptions.Center);
+        }
+
+        float totalGap = leftGap * 3f;
+        float phaseWidth = Mathf.Clamp(leftWidth * 0.20f, 120f, 360f);
+        float statusWidth = Mathf.Clamp(leftWidth * 0.34f, 200f, 520f);
+        float repsWidth = Mathf.Clamp(leftWidth * 0.17f, 110f, 280f);
+        float qualityWidth = Mathf.Max(120f, leftWidth - totalGap - phaseWidth - statusWidth - repsWidth);
+        float xRowTwo = padX;
+        ApplyHudRect(phaseText, parent, new Vector2(xRowTwo, rowTwoY), new Vector2(phaseWidth, chipHeight), new Vector2(0f, 1f), new Vector2(0f, 1f), TextAlignmentOptions.Left);
+        xRowTwo += phaseWidth + leftGap;
+        ApplyHudRect(statusText, parent, new Vector2(xRowTwo, rowTwoY), new Vector2(statusWidth, chipHeight), new Vector2(0f, 1f), new Vector2(0f, 1f), TextAlignmentOptions.Left);
+        xRowTwo += statusWidth + leftGap;
+        ApplyHudRect(repsText, parent, new Vector2(xRowTwo, rowTwoY), new Vector2(repsWidth, chipHeight), new Vector2(0f, 1f), new Vector2(0f, 1f), TextAlignmentOptions.Left);
+        xRowTwo += repsWidth + leftGap;
+        ApplyHudRect(qualityText, parent, new Vector2(xRowTwo, rowTwoY), new Vector2(qualityWidth, chipHeight), new Vector2(0f, 1f), new Vector2(0f, 1f), TextAlignmentOptions.Left);
+
+        float detailWidth = Mathf.Clamp((leftWidth - (leftGap * 2f)) / 3f, 120f, 520f);
+        ApplyHudRect(calibrationText, parent, new Vector2(padX, rowThreeY), new Vector2(detailWidth, chipHeight), new Vector2(0f, 1f), new Vector2(0f, 1f), TextAlignmentOptions.Left);
+        ApplyHudRect(angleText, parent, new Vector2(padX + detailWidth + leftGap, rowThreeY), new Vector2(detailWidth, chipHeight), new Vector2(0f, 1f), new Vector2(0f, 1f), TextAlignmentOptions.Left);
+        ApplyHudRect(minText, parent, new Vector2(padX + (detailWidth + leftGap) * 2f, rowThreeY), new Vector2(detailWidth, chipHeight), new Vector2(0f, 1f), new Vector2(0f, 1f), TextAlignmentOptions.Left);
+
+        float pushWidth = Mathf.Clamp(leftWidth * Mathf.Lerp(0.22f, 0.30f, scaleT), 130f, 310f);
+        ApplyHudRect(targetText, parent, new Vector2(padX, rowFourY), new Vector2(pushWidth, chipHeight), new Vector2(0f, 1f), new Vector2(0f, 1f), TextAlignmentOptions.Left);
+        RectTransform qualityBarRoot = GetQualityBarRoot();
+        if (qualityBarRoot != null)
+        {
+            float availableBarWidth = Mathf.Clamp(leftWidth - pushWidth - leftGap, 180f, 500f);
+            float barWidth = Mathf.Clamp(availableBarWidth * qualityBarWidthRatio, 150f, 420f);
+            float slimBarHeight = Mathf.Clamp(chipHeight * 0.58f, 16f, 28f);
+            float slimBarY = rowFourY - ((chipHeight - slimBarHeight) * 0.5f);
+            ApplyHudRect(qualityBarRoot, parent, new Vector2(padX + pushWidth + leftGap, slimBarY), new Vector2(barWidth, slimBarHeight), new Vector2(0f, 1f), new Vector2(0f, 1f));
+            Image qualityBarBg = qualityBarBackground != null ? qualityBarBackground : qualityBarRoot.GetComponent<Image>();
+            if (qualityBarBg != null)
+            {
+                qualityBarBg.color = new Color(0.10f, 0.18f, 0.30f, 0.92f);
+            }
+
+            RectTransform fillRect = qualityBarFill != null ? qualityBarFill.rectTransform : null;
+            if (fillRect != null && fillRect.parent == qualityBarRoot)
+            {
+                // Keep fill and background aligned when layout resizes dynamically.
+                fillRect.anchorMin = new Vector2(0f, 0f);
+                fillRect.anchorMax = new Vector2(1f, 1f);
+                fillRect.pivot = new Vector2(0.5f, 0.5f);
+                fillRect.anchoredPosition = Vector2.zero;
+                fillRect.sizeDelta = new Vector2(-6f, -4f);
+                fillRect.localScale = Vector3.one;
+            }
+        }
+
+        ApplyHudRect(feedbackText, parent, new Vector2(padX, rowFiveY), new Vector2(leftWidth, chipHeight + 8f), new Vector2(0f, 1f), new Vector2(0f, 1f), TextAlignmentOptions.Left);
+    }
+
+    private void ApplyHudRect(TMP_Text text, RectTransform parent, Vector2 anchoredPosition, Vector2 sizeDelta, Vector2 anchorMin, Vector2 anchorMax, TextAlignmentOptions alignment)
+    {
+        if (text == null || text.rectTransform == null || text.rectTransform.parent != parent)
+            return;
+
+        RectTransform rect = text.rectTransform;
+        rect.anchorMin = anchorMin;
+        rect.anchorMax = anchorMax;
+        rect.pivot = new Vector2(0f, 1f);
+        rect.anchoredPosition = anchoredPosition;
+        rect.sizeDelta = sizeDelta;
+
+        text.alignment = alignment;
+        text.enableWordWrapping = false;
+    }
+
+    private void ApplyHudRect(RectTransform rect, RectTransform parent, Vector2 anchoredPosition, Vector2 sizeDelta, Vector2 anchorMin, Vector2 anchorMax)
+    {
+        if (rect == null || rect.parent != parent)
+            return;
+
+        rect.anchorMin = anchorMin;
+        rect.anchorMax = anchorMax;
+        rect.pivot = new Vector2(0f, 1f);
+        rect.anchoredPosition = anchoredPosition;
+        rect.sizeDelta = sizeDelta;
+        rect.localScale = Vector3.one;
+    }
+
+    private RectTransform GetQualityBarRoot()
+    {
+        if (qualityBarFill == null)
+            return null;
+
+        if (qualityBarFill.transform.parent is RectTransform parent)
+            return parent;
+
+        return qualityBarFill.rectTransform;
+    }
+
+    private static int ResolveScore(DashboardPacket packet, int repCount, float qualityPercent)
+    {
+        if (packet.score > 0 || repCount == 0)
+            return Mathf.Max(0, packet.score);
+
+        return Mathf.Max(0, (repCount * 120) + Mathf.RoundToInt(qualityPercent * 4f));
+    }
+
+    private static int ResolveLevel(DashboardPacket packet, int resolvedScore)
+    {
+        if (packet.level > 1 || resolvedScore == 0)
+            return Mathf.Max(1, packet.level);
+
+        return Mathf.Max(1, (resolvedScore / 1200) + 1);
+    }
+
+    private static int ResolveCombo(DashboardPacket packet, int repCount, float qualityPercent)
+    {
+        if (packet.combo > 0)
+            return packet.combo;
+
+        if (repCount <= 0)
+            return 0;
+
+        return qualityPercent >= 70f ? repCount : 0;
+    }
+
+    private static string ResolveRank(DashboardPacket packet, float qualityPercent)
+    {
+        if (!string.IsNullOrWhiteSpace(packet.rank) && (packet.rank != "BRONZE" || qualityPercent < 70f))
+            return packet.rank;
+
+        if (qualityPercent >= 95f) return "PLATINUM";
+        if (qualityPercent >= 85f) return "GOLD";
+        if (qualityPercent >= 70f) return "SILVER";
+        return "BRONZE";
+    }
+
+    private static string[] ResolveAchievements(DashboardPacket packet, int repCount, float qualityPercent, int combo)
+    {
+        if (packet.achievements != null && packet.achievements.Length > 0)
+            return packet.achievements;
+
+        var local = new List<string>();
+        if (repCount == 1) local.Add("FIRST_REP");
+        if (repCount > 0 && repCount % 5 == 0) local.Add($"REPS_{repCount}");
+        if (qualityPercent >= 95f && repCount > 0) local.Add("PERFECT_FORM");
+        if (combo >= 3 && combo % 3 == 0) local.Add($"COMBO_{combo}");
+        return local.ToArray();
+    }
+
+    private string PrettyRank(string rank)
+    {
+        if (string.IsNullOrWhiteSpace(rank))
+            return "BRONZE";
+
+        return rank.Trim().ToUpperInvariant();
+    }
+
+    private Color GetRankColor(string rank)
+    {
+        if (string.IsNullOrWhiteSpace(rank))
+            return rankColor;
+
+        string normalized = rank.Trim().ToUpperInvariant();
+        if (normalized.Contains("DIAMOND")) return new Color(0.60f, 0.96f, 1f, 0.98f);
+        if (normalized.Contains("PLATINUM")) return new Color(0.70f, 0.90f, 1f, 0.98f);
+        if (normalized.Contains("GOLD")) return new Color(1f, 0.83f, 0.35f, 0.98f);
+        if (normalized.Contains("SILVER")) return new Color(0.88f, 0.91f, 0.97f, 0.98f);
+        if (normalized.Contains("BRONZE")) return new Color(0.85f, 0.66f, 0.44f, 0.98f);
+
+        return rankColor;
+    }
+
+    private string FormatAchievements(string[] achievements)
+    {
+        if (achievements == null || achievements.Length == 0)
+            return "None yet";
+
+        int shown = Mathf.Min(achievements.Length, 3);
+        List<string> labels = new List<string>(shown + 1);
+        for (int i = 0; i < shown; i++)
+        {
+            string label = PrettyAchievement(achievements[i]);
+            if (!string.IsNullOrWhiteSpace(label))
+            {
+                labels.Add(label);
+            }
+        }
+
+        if (achievements.Length > shown)
+        {
+            labels.Add($"+{achievements.Length - shown}");
+        }
+
+        return string.Join(" • ", labels);
+    }
+
+    private string PrettyAchievement(string achievement)
+    {
+        if (string.IsNullOrWhiteSpace(achievement))
+            return string.Empty;
+
+        string normalized = achievement.Trim().Replace("_", " ").Replace("-", " ");
+        string[] parts = normalized.Split(' ');
+        for (int i = 0; i < parts.Length; i++)
+        {
+            if (parts[i].Length == 0)
+                continue;
+
+            parts[i] = char.ToUpperInvariant(parts[i][0]) + parts[i].Substring(1).ToLowerInvariant();
+        }
+
+        return string.Join(" ", parts);
     }
 
     private void ValidateBindings()
