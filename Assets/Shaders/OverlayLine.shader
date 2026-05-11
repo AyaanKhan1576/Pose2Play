@@ -7,7 +7,7 @@ Shader "Pose2Play/OverlayLine"
 
     SubShader
     {
-        Tags { "Queue"="Overlay" "RenderType"="Transparent" "IgnoreProjector"="True" }
+        Tags { "Queue"="Transparent" "RenderType"="Transparent" "IgnoreProjector"="True" "RenderPipeline"="UniversalPipeline" }
         LOD 100
 
         Pass

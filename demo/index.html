@@ -653,6 +653,12 @@
                 grid-template-columns: 1fr;
             }
 
+
+            .session-status {
+                font-size: 13px;
+                color: #64748b;
+                margin: -8px 0 18px;
+            }
             .subtitle,
             h1 {
                 text-align: left;
@@ -670,6 +676,7 @@
 
         <div class="controls">
             <button id="startBtn" class="primary" onclick="startDetection()">Start Detection</button>
+            <button id="resumeBtn" class="secondary accent-info" onclick="resumePreviousProgress()">Continue Previous Progress</button>
             <button id="stopBtn" class="primary" onclick="stopDetection()" disabled>Stop Detection</button>
             <select id="exerciseSelect" onchange="changeExercise()">
                 <option value="squat">Squat (Knee Exercise)</option>
@@ -678,6 +685,7 @@
             </select>
             <button class="secondary" onclick="resetExercise()">Reset Count</button>
         </div>
+        <div class="session-status" id="sessionStatus">Checking for saved progress...</div>
 
         <div class="panel-toggle-buttons">
             <button class="secondary accent-danger" onclick="toggleGamification()">Gamification</button>
@@ -865,6 +873,11 @@
         let ctx;
         let animationId;
         let sessionStartTime = null;
+        let activeSessionId = null;
+        let activeSessionExercise = null;
+        let latestResumableSession = null;
+        let isDetectionActive = false;
+        let lastRepCompletedAt = null;
 
         // Gamification tracking
         let userRewards = {
@@ -891,6 +904,166 @@
             calibration: exerciseManager.getBaselineProgress(),
             timestamp: Date.now()
         };
+
+        async function postSessionEvent(path, payload = {}) {
+            try {
+                const response = await fetch(path, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    return null;
+                }
+
+                return await response.json();
+            } catch (error) {
+                console.warn(`Session logging skipped for ${path}:`, error.message);
+                return null;
+            }
+        }
+
+        async function refreshResumableSessionStatus() {
+            const statusEl = document.getElementById('sessionStatus');
+            const resumeBtn = document.getElementById('resumeBtn');
+
+            try {
+                const response = await fetch(`/session/latest-resumable?exerciseType=${encodeURIComponent(currentExercise)}`);
+                const data = response.ok ? await response.json() : null;
+                latestResumableSession = data?.session || null;
+
+                if (latestResumableSession?.sessionId) {
+                    const reps = latestResumableSession.totalReps || latestResumableSession.lastRepNumber || 0;
+                    const exercise = latestResumableSession.exerciseType || 'unknown';
+                    statusEl.textContent = `Saved session found: ${exercise} with ${reps} rep(s) completed.`;
+                    resumeBtn.disabled = false;
+                    return;
+                }
+
+                statusEl.textContent = 'No saved session found. Start a new session or complete one first.';
+                resumeBtn.disabled = true;
+            } catch (error) {
+                latestResumableSession = null;
+                statusEl.textContent = 'Unable to check saved session status right now.';
+                resumeBtn.disabled = true;
+                console.warn('Could not refresh resumable session:', error.message);
+            }
+        }
+
+        function applyRestoredSessionState(sessionData, restoredReps = []) {
+            const sessionSnapshot = sessionData?.progressSnapshot || {};
+            const sessionExercise = sessionData?.exerciseType || currentExercise;
+            const repHistory = Array.isArray(restoredReps) ? restoredReps : [];
+            const lastRep = repHistory.length > 0 ? repHistory[repHistory.length - 1] : null;
+            const repCount = Number(sessionData?.totalReps || sessionData?.lastRepNumber || repHistory.length || 0);
+            const sessionAngles = repHistory.map(rep => rep?.angle).filter(angle => Number.isFinite(Number(angle)));
+            const personalTarget = sessionData?.pushTarget ?? sessionSnapshot.pushTarget ?? lastRep?.pushTarget ?? null;
+            const minimumThreshold = sessionData?.minimumThreshold ?? sessionSnapshot.minimumThreshold ?? lastRep?.minimumThreshold ?? null;
+            const userBaseline = sessionData?.userBaseline ?? sessionSnapshot.userBaseline ?? lastRep?.baseline ?? null;
+            const currentPhase = sessionData?.lastKnownExercisePhase || sessionSnapshot.lastKnownExercisePhase || sessionData?.currentPhase || sessionSnapshot.currentPhase || 'TRAINING';
+
+            currentExercise = sessionExercise;
+            activeSessionExercise = sessionExercise;
+            document.getElementById('exerciseSelect').value = sessionExercise;
+
+            if (typeof exerciseManager.restoreSessionState === 'function') {
+                exerciseManager.restoreSessionState({
+                    currentExercise: sessionExercise,
+                    repCount,
+                    sessionAngles,
+                    sessionReps: repHistory,
+                    personalTarget,
+                    minimumThreshold,
+                    userBaseline,
+                    currentPhase,
+                    currentState: 'STANDING',
+                    baselineReps: []
+                });
+            } else {
+                exerciseManager.currentExercise = sessionExercise;
+                exerciseManager.repCount = repCount;
+                exerciseManager.sessionAngles = [...sessionAngles];
+                exerciseManager.sessionReps = [...repHistory];
+                exerciseManager.personalTarget = personalTarget;
+                exerciseManager.minimumThreshold = minimumThreshold;
+                exerciseManager.userBaseline = userBaseline;
+                exerciseManager.currentPhase = currentPhase;
+                exerciseManager.currentState = 'STANDING';
+                exerciseManager.baselineReps = [];
+            }
+
+            uiManager.updateRepCount(repCount);
+            if (personalTarget !== null && personalTarget !== undefined) {
+                uiManager.updateTargetAngle(personalTarget);
+            }
+            if (minimumThreshold !== null && minimumThreshold !== undefined) {
+                uiManager.updateMinimumThreshold(minimumThreshold);
+            }
+
+            let formResult = null;
+            if (repHistory.length > 0) {
+                const latestAngle = Number(lastRep?.angle ?? repHistory[repHistory.length - 1]?.angle ?? 0);
+                formResult = mlIntegration.calculateOfflineFormQuality(latestAngle, sessionExercise, repHistory);
+                uiManager.updateFormAnalysis(sessionAngles, repHistory, sessionExercise, formResult);
+            }
+
+            dashboardState = {
+                ...dashboardState,
+                exercise: sessionExercise,
+                phase: currentPhase,
+                repCount,
+                pushTarget: personalTarget,
+                minimumThreshold,
+                formQuality: formResult?.form_quality || dashboardState.formQuality,
+                isCorrect: formResult?.is_correct ?? dashboardState.isCorrect,
+                status: 'Resumed previous progress',
+                feedback: 'Continuing from the saved session',
+                calibration: exerciseManager.getBaselineProgress(),
+                timestamp: Date.now()
+            };
+
+            emitDashboardUpdate({
+                status: 'Resumed previous progress',
+                feedback: 'Continuing from the saved session',
+                formQuality: dashboardState.formQuality,
+                isCorrect: dashboardState.isCorrect,
+                repCount,
+                currentAngle: lastRep?.angle ?? null,
+                pushTarget: personalTarget,
+                minimumThreshold
+            }, true);
+
+            uiManager.updateFeedback('Continuing from previous progress');
+        }
+        
+        function buildSessionSnapshot() {
+            const sessionReps = exerciseManager.getSessionReps();
+            const latestRep = sessionReps.length > 0 ? sessionReps[sessionReps.length - 1] : null;
+            return {
+                exerciseType: activeSessionExercise || currentExercise,
+                totalRepsCompleted: exerciseManager.getRepCount(),
+                currentSetNumber: null,
+                targetReps: null,
+                latestJointAngleSummary: latestRep ? {
+                    primaryAngle: latestRep.angle,
+                    minJointAngles: latestRep.minJointAngles || null,
+                    maxJointAngles: latestRep.maxJointAngles || null,
+                    rangeOfMotion: latestRep.rangeOfMotion || null
+                } : null,
+                latestFeedbackLabels: latestRep?.feedbackLabels || [],
+                latestMistakeFlags: latestRep?.mistakeFlags || [],
+                recentAverageScore: null,
+                rlAdaptiveState: {
+                    currentTarget: exerciseManager.getPersonalTarget(),
+                    minimumThreshold: exerciseManager.getMinimumThreshold(),
+                    baseline: exerciseManager.getUserBaseline()
+                },
+                difficultyLevel: null,
+                lastRepNumber: exerciseManager.getRepCount(),
+                lastKnownExercisePhase: exerciseManager.getCurrentPhase()
+            };
+        }
         
         // Socket.io connection for Unity bridge
         let unitySocket = null;
@@ -1016,6 +1189,9 @@
             // Handle rep completion
             if (result && result.repCompleted) {
                 const repCount = exerciseManager.getRepCount();
+                const completedAt = Date.now();
+                const repDurationSeconds = lastRepCompletedAt ? (completedAt - lastRepCompletedAt) / 1000 : null;
+                lastRepCompletedAt = completedAt;
                 uiManager.updateRepCount(repCount);
                 uiManager.updateFeedback(result.feedbackMsg);
                 emitDashboardUpdate({
@@ -1023,6 +1199,42 @@
                     feedback: result.feedbackMsg,
                     currentAngle: Math.round(angle)
                 }, true);
+
+                // DB call: log the completed rep and a compact feedback event.
+                postSessionEvent('/session/rep', {
+                    exerciseType: activeSessionExercise || currentExercise,
+                    phase: exerciseManager.getCurrentPhase(),
+                    repData: {
+                        ...result.repData,
+                        repNumber: repCount,
+                        exerciseType: activeSessionExercise || currentExercise,
+                        exercisePhase: exerciseManager.getCurrentPhase(),
+                        timestamp: completedAt,
+                        durationSeconds: repDurationSeconds,
+                        feedbackLabels: [
+                            'rep_completed',
+                            ...(result.isPersonalBest ? ['personal_best'] : []),
+                            ...(result.reachedPushTarget ? ['target_reached'] : [])
+                        ],
+                        mistakeFlags: [],
+                        phaseTiming: {
+                            exercisePhase: exerciseManager.getCurrentPhase()
+                        },
+                        rlStateFeatures: {
+                            currentTarget: exerciseManager.getPersonalTarget(),
+                            minimumThreshold: exerciseManager.getMinimumThreshold(),
+                            baseline: exerciseManager.getUserBaseline(),
+                            repCount: repCount
+                        }
+                    },
+                    feedbackEvent: {
+                        eventType: 'rep_feedback',
+                        message: result.feedbackMsg,
+                        severity: result.isPersonalBest ? 'success' : 'info',
+                        repNumber: repCount,
+                        exercisePhase: exerciseManager.getCurrentPhase()
+                    }
+                });
                 
                 // LSTM micro-adjustment (per rep)
                 if (result.angleSequence && result.angleSequence.length > 10) {
@@ -1156,6 +1368,8 @@
             ctx = canvas.getContext('2d');
 
             try {
+                await refreshResumableSessionStatus();
+
                 // Request camera access
                 const stream = await navigator.mediaDevices.getUserMedia({ 
                     video: { width: 640, height: 480 } 
@@ -1184,16 +1398,39 @@
         });
 
         // Start detection
-        window.startDetection = () => {
+        window.startDetection = async () => {
             document.getElementById('startBtn').disabled = true;
             document.getElementById('stopBtn').disabled = false;
             sessionStartTime = Date.now();
             userRewards.sessionRP = 0;
+            lastRepCompletedAt = null;
+            activeSessionExercise = currentExercise;
+            isDetectionActive = true;
             
             // Set session start time for ML integration
             mlIntegration.setSessionStartTime(sessionStartTime);
             
             exerciseManager.reset();
+            // DB call: create or resume the exercise session on the backend.
+            const sessionResponse = await postSessionEvent('/session/start', {
+                exerciseType: activeSessionExercise,
+                metadata: {
+                    source: 'demo/index.html',
+                    appVersion: '0.1.0'
+                }
+            });
+
+            if (sessionResponse?.session?.sessionId) {
+                activeSessionId = sessionResponse.session.sessionId;
+                if (sessionResponse.session.startTime) {
+                    const parsedStart = Date.parse(sessionResponse.session.startTime);
+                    if (!Number.isNaN(parsedStart)) {
+                        sessionStartTime = parsedStart;
+                        mlIntegration.setSessionStartTime(sessionStartTime);
+                    }
+                }
+            }
+
             dashboardState = {
                 ...dashboardState,
                 phase: exerciseManager.getCurrentPhase(),
@@ -1213,11 +1450,68 @@
             detectPose();
         };
 
+        window.resumePreviousProgress = async () => {
+            if (!latestResumableSession?.sessionId) {
+                await refreshResumableSessionStatus();
+            }
+
+            if (!latestResumableSession?.sessionId) {
+                uiManager.updateFeedback('No saved session to continue');
+                return;
+            }
+
+            const sessionId = latestResumableSession.sessionId;
+            const exerciseType = latestResumableSession.exerciseType || currentExercise;
+
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('resumeBtn').disabled = true;
+            document.getElementById('stopBtn').disabled = false;
+
+            sessionStartTime = Date.now();
+            lastRepCompletedAt = null;
+            activeSessionExercise = exerciseType;
+            isDetectionActive = true;
+
+            mlIntegration.setSessionStartTime(sessionStartTime);
+
+            const sessionResponse = await postSessionEvent('/session/start', {
+                sessionId,
+                exerciseType: activeSessionExercise,
+                metadata: {
+                    source: 'demo/index.html',
+                    appVersion: '0.1.0',
+                    resumedFromDashboard: true
+                }
+            });
+
+            if (sessionResponse?.session?.sessionId) {
+                activeSessionId = sessionResponse.session.sessionId;
+                if (sessionResponse.session.startTime) {
+                    const parsedStart = Date.parse(sessionResponse.session.startTime);
+                    if (!Number.isNaN(parsedStart)) {
+                        sessionStartTime = parsedStart;
+                        mlIntegration.setSessionStartTime(sessionStartTime);
+                    }
+                }
+
+                applyRestoredSessionState(sessionResponse.session, sessionResponse.restoredReps || []);
+                detectPose();
+                return;
+            }
+
+            uiManager.updateFeedback('Unable to resume saved progress');
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('resumeBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = true;
+            isDetectionActive = false;
+        };
+
         // Stop detection
-        window.stopDetection = () => {
+        window.stopDetection = async () => {
             if (animationId) {
                 cancelAnimationFrame(animationId);
             }
+            isDetectionActive = false;
             document.getElementById('startBtn').disabled = false;
             document.getElementById('stopBtn').disabled = true;
             uiManager.updateFeedback('Detection stopped');
@@ -1225,10 +1519,21 @@
                 status: 'Paused',
                 feedback: 'Detection stopped'
             }, true);
+            // DB call: pause the current session so it can be resumed later.
+            await postSessionEvent('/session/pause', {
+                snapshotData: buildSessionSnapshot()
+            });
         };
 
         // Reset exercise
         window.resetExercise = () => {
+            if (isDetectionActive || activeSessionId) {
+                // DB call: save a resumable snapshot before clearing local state.
+                postSessionEvent('/session/pause', {
+                    snapshotData: buildSessionSnapshot()
+                });
+            }
+
             exerciseManager.reset();
             mlIntegration.reset();
             userRewards.sessionRP = 0;
@@ -1262,11 +1567,21 @@
             console.log('Session reset - Ready for new session');
         };
 
+        window.addEventListener('beforeunload', () => {
+            if (isDetectionActive) {
+                navigator.sendBeacon('/session/pause', new Blob([
+                    JSON.stringify({ snapshotData: buildSessionSnapshot() })
+                ], { type: 'application/json' }));
+            }
+        });
+
         // Change exercise
         window.changeExercise = () => {
             currentExercise = document.getElementById('exerciseSelect').value;
             exerciseManager.changeExercise(currentExercise);
             window.resetExercise();
+            latestResumableSession = null;
+            refreshResumableSessionStatus();
             emitDashboardUpdate({
                 exercise: currentExercise,
                 status: `Exercise selected: ${currentExercise}`,

@@ -71,4 +71,7 @@ $RECYCLE.BIN/
 
 ml/udp_pose_sender.py
 UNITY_VR_DASHBOARD_SETUP.md
+firebase-service-account*.json
+serviceAccountKey.json
+.env
 
