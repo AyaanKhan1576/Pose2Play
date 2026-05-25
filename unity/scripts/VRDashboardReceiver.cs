@@ -28,6 +28,13 @@ public class DashboardPacket
     public bool isCorrect;
     public CalibrationState calibration;
     public long timestamp;
+    
+    // Gamification fields
+    public int score = 0;
+    public int level = 1;
+    public int combo = 0;
+    public string rank = "BRONZE";
+    public string[] achievements = new string[0];
 }
 
 public class VRDashboardReceiver : MonoBehaviour

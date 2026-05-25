@@ -171,11 +171,51 @@ def handle_dashboard_data(payload):
         if not isinstance(payload, dict):
             return
 
+        # Extract base metrics
+        rep_count = int(payload.get('repCount', 0))
+        quality_str = payload.get('formQuality', '0%').replace('%', '').strip()
+        try:
+            quality_percent = float(quality_str)
+        except:
+            quality_percent = 0.0
+        
+        # Compute gamification metrics
+        score_per_rep = 120
+        score_per_accuracy_point = 4
+        score_per_level = 1200
+        
+        score = max(0, (rep_count * score_per_rep) + int(quality_percent * score_per_accuracy_point))
+        level = max(1, (score // max(100, score_per_level)) + 1)
+        
+        # Determine rank based on quality
+        if quality_percent >= 95:
+            rank = "PLATINUM"
+        elif quality_percent >= 85:
+            rank = "GOLD"
+        elif quality_percent >= 70:
+            rank = "SILVER"
+        else:
+            rank = "BRONZE"
+        
+        # Track combo (simplified: reset if quality drops below 70)
+        combo = rep_count if quality_percent >= 70 else 0
+        
+        # Determine achievements
+        achievements = []
+        if rep_count == 1:
+            achievements.append("FIRST_REP")
+        if rep_count > 0 and rep_count % 5 == 0:
+            achievements.append(f"REPS_{rep_count}")
+        if quality_percent >= 95 and rep_count > 0:
+            achievements.append("PERFECT_FORM")
+        if combo >= 3 and combo % 3 == 0:
+            achievements.append(f"COMBO_{combo}")
+        
         dashboard = {
             'type': 'dashboard_update',
             'exercise': payload.get('exercise', 'squat'),
             'phase': payload.get('phase', 'BASELINE'),
-            'repCount': int(payload.get('repCount', 0)),
+            'repCount': rep_count,
             'currentAngle': payload.get('currentAngle'),
             'pushTarget': payload.get('pushTarget'),
             'minimumThreshold': payload.get('minimumThreshold'),
@@ -184,7 +224,13 @@ def handle_dashboard_data(payload):
             'feedback': payload.get('feedback', ''),
             'isCorrect': bool(payload.get('isCorrect', False)),
             'calibration': payload.get('calibration', {'count': 0, 'required': 3}),
-            'timestamp': int(payload.get('timestamp', 0))
+            'timestamp': int(payload.get('timestamp', 0)),
+            # Gamification fields
+            'score': score,
+            'level': level,
+            'combo': combo,
+            'rank': rank,
+            'achievements': achievements
         }
 
         msg = json.dumps(dashboard).encode('utf-8')
