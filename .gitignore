@@ -75,3 +75,4 @@ firebase-service-account*.json
 serviceAccountKey.json
 .env
 
+START_PHASE7.ps1

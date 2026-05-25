@@ -15,3 +15,5 @@ Builds folder path: D:\University\FYP\VR\VR_Test_URP\Pose2Play\VR_Builds
  Quest Mode: START_PHASE7.ps1 -Mode Quest
  Local: START_PHASE7.ps1 -Mode Local
  
+
+ (Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned) ; (& d:\University\FYP\Pose2Play_BaseModel\venv\Scripts\Activate.ps1)    
